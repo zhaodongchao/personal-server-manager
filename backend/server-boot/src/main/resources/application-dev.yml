@@ -1,0 +1,19 @@
+# 开发环境：Druid 监控页开放 + 详尽日志
+spring:
+  datasource:
+    druid:
+      stat-view-servlet:
+        enabled: true
+        url-pattern: /druid/*
+        login-username: ${DRUID_USER:admin}
+        login-password: ${DRUID_PASSWORD:admin123}
+        allow: 127.0.0.1,::1
+
+logging:
+  level:
+    com.serverpanel: debug
+    org.flywaydb: info
+
+serverpanel:
+  # 开发环境本地测试用白名单（覆盖默认）
+  file-roots: ${PANEL_FILE_ROOTS:/www,/srv,/var/www,/tmp/panel-test}

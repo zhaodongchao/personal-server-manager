@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.serverpanel</groupId>
+    <artifactId>serverpanel-backend</artifactId>
+    <version>1.0.0</version>
+  </parent>
+
+  <artifactId>server-boot</artifactId>
+  <name>ServerPanel :: Boot</name>
+  <description>启动模块：装配全部业务模块、Flyway 迁移、配置与打包</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.serverpanel</groupId>
+      <artifactId>server-system</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.serverpanel</groupId>
+      <artifactId>server-monitor</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.serverpanel</groupId>
+      <artifactId>server-file</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.serverpanel</groupId>
+      <artifactId>server-ops</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.serverpanel</groupId>
+      <artifactId>server-appstack</artifactId>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <finalName>serverpanel</finalName>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+</project>

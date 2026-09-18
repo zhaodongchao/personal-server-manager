@@ -1,0 +1,45 @@
+# 开发环境基础设施（ServerPanel）
+# 用法：docker compose -f docker-compose.dev.yml up -d
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: serverpanel-mysql
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      MYSQL_ROOT_PASSWORD: Root@123456
+      MYSQL_DATABASE: server_panel
+      MYSQL_USER: panel
+      MYSQL_PASSWORD: Panel@123456
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      # 首次初始化时为面板账号补充 Flyway 所需的 performance_schema 只读权限
+      - ./docker/mysql-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pRoot@123456"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: serverpanel-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  mysql-data:
+  redis-data:

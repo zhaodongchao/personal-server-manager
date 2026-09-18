@@ -1,0 +1,22 @@
+# 生产环境：关闭 Druid 监控页，收敛日志
+spring:
+  datasource:
+    druid:
+      stat-view-servlet:
+        enabled: false
+  flyway:
+    clean-disabled: true
+
+logging:
+  level:
+    com.serverpanel: info
+    root: warn
+  file:
+    name: /var/log/serverpanel/serverpanel.log
+
+server:
+  # 生产建议仅监听本机，由外层 Nginx/Caddy 反代并提供 HTTPS
+  address: ${SERVER_ADDRESS:0.0.0.0}
+
+serverpanel:
+  file-roots: ${PANEL_FILE_ROOTS:/www,/srv,/var/www}

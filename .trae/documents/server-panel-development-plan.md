@@ -133,25 +133,247 @@
 - **鉴权**：Sa-Token 注解式 `@SaCheckPermission("system:user:add")`；菜单/按钮权限标识与 `sys_menu.perms` 对齐。高危操作（删文件、kill 进程、防火墙开关、删容器、删库）额外启用 **Sa-Token 二级认证**（`StpUtil.checkSafe()`，前端弹二次密码框）。
 - **API 前缀**：`/api/v1/**`；WebSocket：`/ws/monitor?satoken=xxx`。
 
-### 5.2 数据库设计（MySQL 8.4，utf8mb4，Flyway 管理 `V1__init.sql` 等）
+### 5.2 数据库设计（先行交付物：完整 DDL，MySQL 8.4 / utf8mb4 / Flyway 管理）
 
-| 表 | 关键字段 / 说明 |
-|---|---|
-| `sys_user` | id, username, nickname, password(BCrypt), email, avatar, status, last_login_at；内置 admin |
-| `sys_role` / `sys_user_role` / `sys_role_menu` | 标准 RBAC 多对多 |
-| `sys_menu` | id, parent_id, name, menu_type(M目录/C菜单/F按钮), path, component, perms, icon, sort, visible —— 直接输出 Vben 后端路由格式 |
-| `sys_dict_type` / `sys_dict_data` | 字典 |
-| `sys_config` | config_key, config_value（如监控采集间隔、文件根目录白名单） |
-| `sys_audit_log` | operator, module, action, method, uri, params, result_code, duration_ms, ip, ua, created_at |
-| `sys_login_log` | username, ip, status, message, created_at |
-| `mon_metric_hour` | metric_time, cpu, mem, disk_pct, net_in, net_out —— 每小时聚合（实时数据不进 MySQL） |
-| `ops_cron_job` | name, cron_expr, command, timeout_sec, status, last_run_at |
-| `ops_cron_log` | job_id, output, exit_code, started_at, finished_at |
-| `file_recycle_bin` | origin_path, trash_path, file_name, is_dir, size, operator, created_at, expire_at |
-| `app_website` | domain, site_name, upstream(json), ssl_enabled, cert_path, conf_path, status |
-| `app_database` | db_name, db_user, remark, charset —— 面板代管的库元数据（真实 DDL 在 MySQL 中） |
+**总约定**：InnoDB；主键 `id BIGINT` 由 MyBatis-Plus 雪花算法生成（`ASSIGN_ID`），不用自增；所有表带 `created_at`/`updated_at`；配置类表才有逻辑删除位；本节 DDL 定稿后**原样落为 `server-boot/src/main/resources/db/migration/V1__init.sql`**，是全部实施阶段的前置交付物。
 
-主键策略 `ASSIGN_ID`（雪花）；逻辑删除 `deleted` 字段（仅配置类表）。
+**ER 关系**：`sys_user ←(sys_user_role)→ sys_role ←(sys_role_menu)→ sys_menu`（多对多）；其余表独立。
+
+```sql
+-- ========== 系统管理 ==========
+CREATE TABLE sys_user (
+  id            BIGINT       NOT NULL COMMENT '主键(雪花ID)',
+  username      VARCHAR(30)  NOT NULL COMMENT '登录名',
+  nickname      VARCHAR(30)  NOT NULL DEFAULT '' COMMENT '昵称',
+  password      VARCHAR(100) NOT NULL COMMENT 'BCrypt 哈希',
+  email         VARCHAR(100)          DEFAULT NULL,
+  phone         VARCHAR(20)           DEFAULT NULL,
+  avatar        VARCHAR(255)          DEFAULT NULL,
+  status        TINYINT      NOT NULL DEFAULT 1 COMMENT '1启用 0停用',
+  last_login_at DATETIME               DEFAULT NULL,
+  last_login_ip VARCHAR(50)            DEFAULT NULL,
+  created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_username (username)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户';
+
+CREATE TABLE sys_role (
+  id         BIGINT      NOT NULL,
+  role_name  VARCHAR(30) NOT NULL COMMENT '角色名',
+  role_key   VARCHAR(60) NOT NULL COMMENT '权限字符',
+  sort       INT         NOT NULL DEFAULT 0,
+  status     TINYINT     NOT NULL DEFAULT 1,
+  remark     VARCHAR(255)         DEFAULT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_role_key (role_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='角色';
+
+CREATE TABLE sys_user_role (
+  user_id BIGINT NOT NULL,
+  role_id BIGINT NOT NULL,
+  PRIMARY KEY (user_id, role_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户-角色';
+
+CREATE TABLE sys_menu (
+  id         BIGINT       NOT NULL,
+  parent_id  BIGINT       NOT NULL DEFAULT 0 COMMENT '父菜单ID,0为根',
+  menu_name  VARCHAR(30)  NOT NULL,
+  menu_type  CHAR(1)      NOT NULL COMMENT 'M目录 C菜单 F按钮',
+  route_path VARCHAR(200)          DEFAULT NULL COMMENT '路由地址',
+  component  VARCHAR(255)          DEFAULT NULL COMMENT '前端组件路径(Vben后端路由格式)',
+  perms      VARCHAR(100)          DEFAULT NULL COMMENT '权限标识 如 system:user:add',
+  icon       VARCHAR(60)           DEFAULT NULL,
+  sort       INT          NOT NULL DEFAULT 0,
+  visible    TINYINT      NOT NULL DEFAULT 1 COMMENT '1显示 0隐藏',
+  status     TINYINT      NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_parent_id (parent_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='菜单权限';
+
+CREATE TABLE sys_role_menu (
+  role_id BIGINT NOT NULL,
+  menu_id BIGINT NOT NULL,
+  PRIMARY KEY (role_id, menu_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='角色-菜单';
+
+CREATE TABLE sys_dict_type (
+  id         BIGINT      NOT NULL,
+  dict_name  VARCHAR(60) NOT NULL,
+  dict_type  VARCHAR(60) NOT NULL,
+  status     TINYINT     NOT NULL DEFAULT 1,
+  remark     VARCHAR(255)         DEFAULT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_dict_type (dict_type)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='字典类型';
+
+CREATE TABLE sys_dict_data (
+  id         BIGINT       NOT NULL,
+  dict_type  VARCHAR(60)  NOT NULL,
+  dict_label VARCHAR(100) NOT NULL,
+  dict_value VARCHAR(100) NOT NULL,
+  sort       INT          NOT NULL DEFAULT 0,
+  status     TINYINT      NOT NULL DEFAULT 1,
+  is_default TINYINT      NOT NULL DEFAULT 0,
+  remark     VARCHAR(255)          DEFAULT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_dict_type (dict_type)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='字典数据';
+
+CREATE TABLE sys_config (
+  id           BIGINT       NOT NULL,
+  config_name  VARCHAR(100) NOT NULL,
+  config_key   VARCHAR(100) NOT NULL,
+  config_value VARCHAR(500) NOT NULL DEFAULT '',
+  config_type  CHAR(1)      NOT NULL DEFAULT 'N' COMMENT 'Y内置不可删 N用户',
+  remark       VARCHAR(255)          DEFAULT NULL,
+  created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_config_key (config_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='参数配置';
+
+CREATE TABLE sys_audit_log (
+  id             BIGINT       NOT NULL,
+  operator       VARCHAR(30)  NOT NULL COMMENT '操作人',
+  module         VARCHAR(30)  NOT NULL COMMENT 'system/file/ops/appstack',
+  action         VARCHAR(60)  NOT NULL COMMENT '动作 如 user:add',
+  method         VARCHAR(200) NOT NULL COMMENT '类#方法',
+  request_uri    VARCHAR(255) NOT NULL,
+  request_method VARCHAR(10)  NOT NULL,
+  params         TEXT COMMENT '入参JSON(截断2KB)',
+  result_code    INT          NOT NULL COMMENT '响应code',
+  error_msg      VARCHAR(500)          DEFAULT NULL,
+  duration_ms    BIGINT       NOT NULL,
+  ip             VARCHAR(50)  NOT NULL,
+  user_agent     VARCHAR(255)          DEFAULT NULL,
+  created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_operator (operator),
+  KEY idx_created_at (created_at),
+  KEY idx_module (module)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='操作审计日志(只增不改)';
+
+CREATE TABLE sys_login_log (
+  id         BIGINT      NOT NULL,
+  username   VARCHAR(30) NOT NULL,
+  ip         VARCHAR(50) NOT NULL,
+  status     TINYINT     NOT NULL COMMENT '1成功 0失败',
+  message    VARCHAR(200)         DEFAULT NULL,
+  user_agent VARCHAR(255)         DEFAULT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_username (username),
+  KEY idx_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='登录日志';
+
+-- ========== 监控 ==========
+CREATE TABLE mon_metric_hour (
+  id          BIGINT        NOT NULL,
+  metric_time DATETIME      NOT NULL COMMENT '统计小时(整点)',
+  cpu_usage   DECIMAL(5,2)  NOT NULL COMMENT '平均CPU%',
+  mem_usage   DECIMAL(5,2)  NOT NULL,
+  disk_usage  DECIMAL(5,2)  NOT NULL COMMENT '根分区使用%',
+  net_in_mb   DECIMAL(12,2) NOT NULL COMMENT '小时流入MB',
+  net_out_mb  DECIMAL(12,2) NOT NULL,
+  load_avg    DECIMAL(6,2)  NOT NULL COMMENT '1分钟负载均值',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_metric_time (metric_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='监控小时聚合(实时数据在Redis)';
+
+-- ========== 运维工具 ==========
+CREATE TABLE ops_cron_job (
+  id          BIGINT       NOT NULL,
+  name        VARCHAR(60)  NOT NULL COMMENT '任务名',
+  cron_expr   VARCHAR(60)  NOT NULL COMMENT '5段cron表达式',
+  command     VARCHAR(500) NOT NULL COMMENT '命令(经白名单校验)',
+  timeout_sec INT          NOT NULL DEFAULT 300,
+  status      TINYINT      NOT NULL DEFAULT 1 COMMENT '1启用 0停用',
+  remark      VARCHAR(255)          DEFAULT NULL,
+  last_run_at DATETIME               DEFAULT NULL,
+  next_run_at DATETIME               DEFAULT NULL COMMENT '调度器计算的下次执行时间',
+  created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_status_next (status, next_run_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='计划任务';
+
+CREATE TABLE ops_cron_log (
+  id          BIGINT      NOT NULL,
+  job_id      BIGINT      NOT NULL,
+  job_name    VARCHAR(60) NOT NULL COMMENT '冗余,防任务删除后丢失信息',
+  exit_code   INT         NOT NULL,
+  output      TEXT COMMENT '输出(截断64KB)',
+  started_at  DATETIME    NOT NULL,
+  finished_at DATETIME             DEFAULT NULL,
+  duration_ms BIGINT      NOT NULL DEFAULT 0,
+  PRIMARY KEY (id),
+  KEY idx_job_id_started (job_id, started_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='计划任务执行日志';
+
+CREATE TABLE file_recycle_bin (
+  id          BIGINT       NOT NULL,
+  origin_path VARCHAR(500) NOT NULL COMMENT '删除前原路径',
+  trash_path  VARCHAR(500) NOT NULL COMMENT '回收站内路径',
+  file_name   VARCHAR(255) NOT NULL,
+  is_dir      TINYINT     NOT NULL DEFAULT 0,
+  size        BIGINT      NOT NULL DEFAULT 0 COMMENT '字节',
+  operator    VARCHAR(30) NOT NULL,
+  created_at  DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '删除时间',
+  expire_at   DATETIME    NOT NULL COMMENT '过期时间(默认+7天,由定时清理)',
+  PRIMARY KEY (id),
+  KEY idx_expire_at (expire_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='文件回收站';
+
+-- ========== 应用栈 ==========
+CREATE TABLE app_website (
+  id          BIGINT       NOT NULL,
+  domain      VARCHAR(255) NOT NULL COMMENT '主域名',
+  site_name   VARCHAR(60)  NOT NULL,
+  site_type   VARCHAR(20)  NOT NULL DEFAULT 'proxy' COMMENT 'proxy反代 / static静态',
+  upstream    VARCHAR(500)          DEFAULT NULL COMMENT '反代目标 http://127.0.0.1:3000',
+  static_root VARCHAR(255)          DEFAULT NULL COMMENT '静态根目录(须在文件白名单内)',
+  ssl_enabled TINYINT      NOT NULL DEFAULT 0,
+  cert_path   VARCHAR(255)          DEFAULT NULL,
+  key_path    VARCHAR(255)          DEFAULT NULL,
+  conf_path   VARCHAR(255) NOT NULL COMMENT '/etc/nginx/panel.d/{domain}.conf',
+  status      TINYINT      NOT NULL DEFAULT 1 COMMENT '1运行 0停用',
+  remark      VARCHAR(255)          DEFAULT NULL,
+  created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_domain (domain)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Nginx站点';
+
+CREATE TABLE app_database (
+  id         BIGINT      NOT NULL,
+  db_name    VARCHAR(64) NOT NULL,
+  db_user    VARCHAR(64) NOT NULL COMMENT '该库的授权账号(密码不入库)',
+  charset    VARCHAR(20) NOT NULL DEFAULT 'utf8mb4',
+  remark     VARCHAR(255)         DEFAULT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_db_name (db_name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='面板代管MySQL库';
+```
+
+**种子数据（`V1__init.sql` 同文件内 INSERT，ID 用固定雪花值）**：
+- `sys_user`：`admin`，密码为 `BCrypt(Admin@123)`（哈希实施时用 `new BCryptPasswordEncoder().encode("Admin@123")` 生成后写入，首次登录强制改密）；
+- `sys_role`：`admin 超级管理员`；`sys_user_role`/`sys_role_menu`：admin 关联全部菜单；
+- `sys_menu`：五个一级目录（仪表盘/系统管理/文件管理/运维工具/应用栈）+ 各子菜单（与 §6.2 页面一一对应）+ 按钮级 F 项（如 `system:user:add`、`file:delete`、`ops:process:kill`、`appstack:database:drop` 等高危按钮）；
+- `sys_config`：`monitor.interval-seconds=5`、`file.roots=/www,/srv,/var/www`、`file.trash.retain-days=7`、`login.max-fail=5`、`login.lock-minutes=15`；
+- `sys_dict_type`/`sys_dict_data`：`sys_normal_disable`（1启用/0停用）等。
+
+**表结构与实施阶段的关系**：本节 DDL 为**先行定稿交付物**——方案确认后第一个实施动作即将其固化为 Flyway `V1__init.sql` 并验证（见 Phase 0/1 验收），后续所有阶段的业务代码均以本表结构为准，不再变更（新增字段走 `V2__*.sql` 增量迁移）。
 
 ### 5.3 核心模块技术方案
 
@@ -256,12 +478,17 @@ CRUD /mysql/database        POST /mysql/backup  POST /mysql/restore
 
 ## 9. 实施阶段（按序执行，每阶段有验收标准）
 
-### Phase 0 — 工程脚手架
-任务：仓库目录结构；后端父 POM + 7 模块骨架（依赖链、`.editorconfig`、Checkstyle/Spotless 格式化）；Vben 克隆裁剪（删 ele/naive/playground、改标题 Logo 为 ServerPanel）；`docker-compose.dev.yml`；CI 可后置。
-验收：`mvn clean install` 全绿（空模块可编译）；`pnpm i && pnpm build` 成功出 dist；compose 起来后 MySQL/Redis 可连通。
+### Phase 0 — 工程脚手架 + 数据库表结构落地（先行）
+任务：
+1. 仓库目录结构（§4）；
+2. 后端父 POM + 7 模块骨架（依赖链、`.editorconfig`、Checkstyle/Spotless 格式化）；
+3. **将 §5.2 已定稿的完整 DDL 固化为 `server-boot/src/main/resources/db/migration/V1__init.sql`（16 张表 + 全部种子数据），启动 server-boot 验证 Flyway 迁移成功**；
+4. Vben 克隆裁剪（删 ele/naive/playground、改标题 Logo 为 ServerPanel）；`docker-compose.dev.yml`；CI 可后置。
 
-### Phase 1 — 核心基座
-任务：common（R/异常/错误码/BaseEntity）+ framework（Sa-Token、Druid、MP 分页插件、Redis、CORS、全局异常、审计 AOP）；Flyway `V1__init.sql` 建全部表 + 初始数据（admin/角色/菜单）；auth（登录/登出/userinfo/改密 + 防爆破锁定）；system 用户/角色/菜单/字典/配置/审计/登录日志 CRUD；monitor（OSHI 采集 + Redis 环形缓存 + WS 推送 + overview 接口）；前端：登录页对接、动态路由、布局、仪表盘实时图表、系统管理七个页面。
+验收：`mvn clean install` 全绿；`flyway_schema_history` 中 V1 成功、16 张表齐全、admin/角色/菜单/配置/字典种子就位；`pnpm i && pnpm build` 出 dist；compose 起来后 MySQL/Redis 可连通。
+
+### Phase 1 — 核心基座（基于已落地表结构开发）
+任务：common（R/异常/错误码/BaseEntity）+ framework（Sa-Token、Druid、MP 分页插件、Redis、CORS、全局异常、审计 AOP）；auth（登录/登出/userinfo/改密 + 防爆破锁定）；system 用户/角色/菜单/字典/配置/审计/登录日志 CRUD；monitor（OSHI 采集 + Redis 环形缓存 + WS 推送 + overview 接口）；前端：登录页对接、动态路由、布局、仪表盘实时图表、系统管理七个页面。
 验收：admin 登录→菜单按权限渲染；仪表盘每 5s 收到 WS 帧；对任意写接口的操作出现在审计日志。
 
 ### Phase 2 — 文件管理器

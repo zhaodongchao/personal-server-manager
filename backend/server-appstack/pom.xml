@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.serverpanel</groupId>
+    <artifactId>serverpanel-backend</artifactId>
+    <version>1.0.0</version>
+  </parent>
+
+  <artifactId>server-appstack</artifactId>
+  <name>ServerPanel :: AppStack</name>
+  <description>应用栈管理：Docker 容器/镜像、Nginx 网站、MySQL 数据库</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.serverpanel</groupId>
+      <artifactId>server-framework</artifactId>
+    </dependency>
+    <!-- Docker Engine API（unix socket） -->
+    <dependency>
+      <groupId>com.github.docker-java</groupId>
+      <artifactId>docker-java-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.github.docker-java</groupId>
+      <artifactId>docker-java-transport-httpclient5</artifactId>
+    </dependency>
+    <!-- Nginx 站点配置模板 -->
+    <dependency>
+      <groupId>org.freemarker</groupId>
+      <artifactId>freemarker</artifactId>
+    </dependency>
+  </dependencies>
+</project>

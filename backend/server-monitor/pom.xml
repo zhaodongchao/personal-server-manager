@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.serverpanel</groupId>
+    <artifactId>serverpanel-backend</artifactId>
+    <version>1.0.0</version>
+  </parent>
+
+  <artifactId>server-monitor</artifactId>
+  <name>ServerPanel :: Monitor</name>
+  <description>系统监控：OSHI 采集、Redis 环形缓存、WebSocket 推送、历史聚合</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.serverpanel</groupId>
+      <artifactId>server-framework</artifactId>
+    </dependency>
+    <!-- OSHI 系统指标采集 -->
+    <dependency>
+      <groupId>com.github.oshi</groupId>
+      <artifactId>oshi-core</artifactId>
+    </dependency>
+  </dependencies>
+</project>

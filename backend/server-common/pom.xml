@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.serverpanel</groupId>
+    <artifactId>serverpanel-backend</artifactId>
+    <version>1.0.0</version>
+  </parent>
+
+  <artifactId>server-common</artifactId>
+  <name>ServerPanel :: Common</name>
+  <description>通用组件：统一响应、异常、错误码、常量、基础实体、审计注解</description>
+
+  <dependencies>
+    <!-- 仅依赖 MyBatis-Plus 注解（BaseEntity/@TableField 等），保持本模块轻量 -->
+    <dependency>
+      <groupId>com.baomidou</groupId>
+      <artifactId>mybatis-plus-annotation</artifactId>
+    </dependency>
+  </dependencies>
+</project>
