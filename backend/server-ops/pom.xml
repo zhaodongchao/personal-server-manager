@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.serverpanel</groupId>
+    <artifactId>serverpanel-backend</artifactId>
+    <version>1.0.0</version>
+  </parent>
+
+  <artifactId>server-ops</artifactId>
+  <name>ServerPanel :: Ops</name>
+  <description>运维工具：进程管理、systemd 服务、计划任务、防火墙</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.serverpanel</groupId>
+      <artifactId>server-framework</artifactId>
+    </dependency>
+    <!-- cron 表达式解析（面板内调度） -->
+    <dependency>
+      <groupId>com.cronutils</groupId>
+      <artifactId>cron-utils</artifactId>
+    </dependency>
+  </dependencies>
+</project>

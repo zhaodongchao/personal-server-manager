@@ -19,6 +19,33 @@
 *.tar.gz
 *.rar
 
-# virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
+# virtual machine crash logs, see http://www.java.com/en/download/help_delete_hotspot.xml
 hs_err_pid*
 replay_pid*
+
+# ===== Maven / Java (backend) =====
+backend/**/target/
+.mvn/wrapper/maven-wrapper.jar
+
+# ===== Node / 前端 =====
+node_modules/
+dist/
+.turbo/
+.eslintcache
+.stylelintcache
+*.local
+.pnpm-store/
+
+# ===== IDE =====
+.idea/
+*.iml
+.vscode/
+!.vscode/settings.json
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+
+# ===== 环境敏感文件 =====
+**/.env.local
+**/.env.*.local
