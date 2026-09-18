@@ -1,6 +1,5 @@
 package com.serverpanel.monitor.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.serverpanel.common.constant.CacheConstants;
 import com.serverpanel.monitor.dto.MetricFrame;
 import com.serverpanel.monitor.dto.MonitorOverview;
@@ -19,6 +18,7 @@ import oshi.software.os.OperatingSystem;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import tools.jackson.databind.ObjectMapper;
 
 import java.io.File;
 import java.math.BigDecimal;
@@ -222,7 +222,7 @@ public class MetricsCollector {
     }
 
     /** 每小时整点：聚合上一小时数据入库（幂等 upsert） */
-    @Scheduled(cron = "0 0 * * *")
+    @Scheduled(cron = "0 0 * * * *")
     public void hourlyAggregate() {
         try {
             LocalDateTime hourEnd = LocalDateTime.now().truncatedTo(java.time.temporal.ChronoUnit.HOURS);

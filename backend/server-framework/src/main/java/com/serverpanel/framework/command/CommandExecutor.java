@@ -11,6 +11,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -38,6 +39,7 @@ public class CommandExecutor {
 
     /** 内置命令白名单：本面板需要的系统命令（不含任何 shell 解释器） */
     private static final Set<String> BUILTIN_WHITELIST = Set.of(
+        "ps", "kill",
         "systemctl", "journalctl",
         "nginx",
         "ufw", "firewall-cmd",
@@ -80,6 +82,20 @@ public class CommandExecutor {
      * @throws ServiceException 命令不在白名单 / 启动失败
      */
     public ExecResult exec(String... argv) {
+        return execInternal(Map.of(), argv);
+    }
+
+    /**
+     * 同步执行，可附加环境变量（如 MYSQL_PWD）。
+     *
+     * <p>环境变量用于避免把敏感信息写进 argv（/proc 可见）。
+     * 安全约束与 {@link #exec(String...)} 完全一致。
+     */
+    public ExecResult exec(Map<String, String> env, String... argv) {
+        return execInternal(env, argv);
+    }
+
+    private ExecResult execInternal(Map<String, String> env, String... argv) {
         if (argv == null || argv.length == 0) {
             throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "命令不能为空");
         }
@@ -90,7 +106,11 @@ public class CommandExecutor {
         long start = System.currentTimeMillis();
         Process process = null;
         try {
-            process = new ProcessBuilder(argv).start();
+            ProcessBuilder builder = new ProcessBuilder(argv);
+            if (env != null && !env.isEmpty()) {
+                builder.environment().putAll(env);
+            }
+            process = builder.start();
             String stdout = readStream(process.getInputStream());
             String stderr = readStream(process.getErrorStream());
             boolean finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);

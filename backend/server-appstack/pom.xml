@@ -18,6 +18,11 @@
       <groupId>com.serverpanel</groupId>
       <artifactId>server-framework</artifactId>
     </dependency>
+    <!-- 复用文件模块的根目录白名单校验（static_root 必须位于白名单内） -->
+    <dependency>
+      <groupId>com.serverpanel</groupId>
+      <artifactId>server-file</artifactId>
+    </dependency>
     <!-- Docker Engine API（unix socket） -->
     <dependency>
       <groupId>com.github.docker-java</groupId>

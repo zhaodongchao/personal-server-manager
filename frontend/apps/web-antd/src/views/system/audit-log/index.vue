@@ -5,6 +5,7 @@ import { Page } from '@vben/common-ui';
 
 import { Tag } from 'ant-design-vue';
 
+import type { VxeTableGridOptions } from '#/adapter/vxe-table';
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
 import { getAuditLogPageApi } from '#/api';
 
@@ -35,10 +36,9 @@ const formOptions: VbenFormProps = {
       label: '模块',
     },
   ],
-  submitOnChange: [],
 };
 
-const gridOptions = {
+const gridOptions: VxeTableGridOptions = {
   columns: [
     { title: '序号', type: 'seq', width: 60 },
     { field: 'module', title: '模块', width: 100 },
@@ -70,10 +70,7 @@ const gridOptions = {
   ],
   proxyConfig: {
     ajax: {
-      query: async (
-        { page }: { page: { currentPage: number; pageSize: number } },
-        formValues: Record<string, any>,
-      ) => {
+      query: async ({ page }, formValues) => {
         const res = await getAuditLogPageApi({
           pageNum: page.currentPage,
           pageSize: page.pageSize,

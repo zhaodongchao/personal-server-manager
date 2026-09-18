@@ -134,7 +134,7 @@ function confirmTypeDelete(record: DictApi.DictType) {
   Modal.confirm({
     content: `确定删除字典类型「${record.dictName}」？其字典数据将一并删除。`,
     onOk: async () => {
-      await deleteDictTypeApi(record.id);
+      await deleteDictTypeApi(record.id!);
       message.success('删除成功');
       await loadTypes();
     },
@@ -295,7 +295,7 @@ function openDataCreate() {
 
 function openDataEdit(record: DictApi.DictData) {
   dataEditing.value = true;
-  dataEditingId.value = record.id;
+  dataEditingId.value = record.id!;
   dataFormApi.resetForm();
   dataFormApi.setValues({
     dictType: `${selectedType.value?.dictName ?? ''} (${record.dictType})`,
@@ -314,7 +314,7 @@ function confirmDataDelete(record: DictApi.DictData) {
   Modal.confirm({
     content: `确定删除字典数据「${record.dictLabel}」？`,
     onOk: async () => {
-      await deleteDictDataApi(record.id);
+      await deleteDictDataApi(record.id!);
       message.success('删除成功');
       await loadData();
     },

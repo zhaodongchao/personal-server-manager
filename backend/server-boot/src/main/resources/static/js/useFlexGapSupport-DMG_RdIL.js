@@ -1,0 +1,1 @@
+import{ct as e,xn as t}from"./runtime-core.esm-bundler-DkysjgTd.js";import{n}from"./styleChecker-By2_x5QU.js";var r=(()=>{let r=t(!1);return e(()=>{r.value=n()}),r});export{r as t};

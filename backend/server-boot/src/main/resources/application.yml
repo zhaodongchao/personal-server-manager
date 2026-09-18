@@ -82,11 +82,11 @@ springdoc:
 
 # ServerPanel 自有配置
 serverpanel:
-  # 文件管理根目录白名单（逗号分隔）
-  file-roots: ${PANEL_FILE_ROOTS:/www,/srv,/var/www}
-  # 回收站目录与保留天数
-  trash-dir: ${PANEL_TRASH_DIR:/var/serverpanel/trash}
-  trash-retain-days: 7
+  # 文件管理（根目录白名单 / 回收站目录 / 保留天数）
+  file:
+    roots: ${PANEL_FILE_ROOTS:/www,/srv,/var/www}
+    trash-dir: ${PANEL_TRASH_DIR:/var/serverpanel/trash}
+    trash-retain-days: 7
   # 登录防爆破
   login:
     max-fail: 5

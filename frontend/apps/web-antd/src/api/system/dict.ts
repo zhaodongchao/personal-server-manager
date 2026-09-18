@@ -2,17 +2,17 @@ import { requestClient } from '#/api/request';
 
 export namespace DictApi {
   export interface DictType {
-    id: string;
+    id?: string;
     dictName: string;
     dictType: string;
     status: number;
     remark?: string;
-    createdAt: string;
-    updatedAt: string;
+    createdAt?: string;
+    updatedAt?: string;
   }
 
   export interface DictData {
-    id: string;
+    id?: string;
     dictType: string;
     dictLabel: string;
     dictValue: string;

@@ -15,5 +15,6 @@ logging:
     org.flywaydb: info
 
 serverpanel:
-  # 开发环境本地测试用白名单（覆盖默认）
-  file-roots: ${PANEL_FILE_ROOTS:/www,/srv,/var/www,/tmp/panel-test}
+  file:
+    # 开发环境本地测试用白名单（覆盖默认）
+    roots: ${PANEL_FILE_ROOTS:/www,/srv,/var/www,/tmp/panel-test}

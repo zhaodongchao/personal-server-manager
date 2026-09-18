@@ -19,4 +19,5 @@ server:
   address: ${SERVER_ADDRESS:0.0.0.0}
 
 serverpanel:
-  file-roots: ${PANEL_FILE_ROOTS:/www,/srv,/var/www}
+  file:
+    roots: ${PANEL_FILE_ROOTS:/www,/srv,/var/www}

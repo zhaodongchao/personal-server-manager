@@ -5,6 +5,7 @@ import { Page } from '@vben/common-ui';
 
 import { Tag } from 'ant-design-vue';
 
+import type { VxeTableGridOptions } from '#/adapter/vxe-table';
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
 import { getLoginLogPageApi } from '#/api';
 
@@ -33,10 +34,9 @@ const formOptions: VbenFormProps = {
       label: '状态',
     },
   ],
-  submitOnChange: [],
 };
 
-const gridOptions = {
+const gridOptions: VxeTableGridOptions = {
   columns: [
     { title: '序号', type: 'seq', width: 60 },
     { field: 'username', title: '用户名', width: 140 },
@@ -64,10 +64,7 @@ const gridOptions = {
   ],
   proxyConfig: {
     ajax: {
-      query: async (
-        { page }: { page: { currentPage: number; pageSize: number } },
-        formValues: Record<string, any>,
-      ) => {
+      query: async ({ page }, formValues) => {
         const res = await getLoginLogPageApi({
           pageNum: page.currentPage,
           pageSize: page.pageSize,
