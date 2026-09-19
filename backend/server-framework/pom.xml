@@ -34,6 +34,11 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-data-redis</artifactId>
     </dependency>
+    <!-- MongoDB（偏好设置等文档型存储） -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-data-mongodb</artifactId>
+    </dependency>
     <!-- WebSocket（实时监控推送） -->
     <dependency>
       <groupId>org.springframework.boot</groupId>

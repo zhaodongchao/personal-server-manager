@@ -3,6 +3,7 @@ export * from './appstack';
 export * from './file';
 export * from './monitor';
 export * from './ops';
+export * from './preference';
 export * from './system/config';
 export * from './system/dict';
 export * from './system/log';

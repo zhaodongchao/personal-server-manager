@@ -7,6 +7,7 @@ import { startProgress, stopProgress } from '@vben/utils';
 
 import { accessRoutes, coreRouteNames } from '#/router/routes';
 import { useAuthStore } from '#/store';
+import { initPreferenceSync } from '#/utils/preference-sync';
 
 import { generateAccess } from './access';
 
@@ -93,6 +94,8 @@ function setupAccessGuard(router: Router) {
     // 生成路由表
     // 当前登录用户拥有的角色标识列表
     const userInfo = userStore.userInfo || (await authStore.fetchUserInfo());
+    // 登录态建立后异步同步云端偏好设置（不 await：不阻塞路由首屏，本地缓存先行渲染）
+    initPreferenceSync();
     const userRoles = userInfo.roles ?? [];
 
     // 生成菜单和路由
