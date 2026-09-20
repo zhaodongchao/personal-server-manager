@@ -28,6 +28,9 @@ public class MonitorOverview {
     /** 物理磁盘详细信息列表 */
     private List<PhysicalDisk> physicalDisks;
 
+    /** Device Mapper 设备列表（LVM 逻辑卷映射 / dm-* 等），如根分区为 LVM 则在此展示 */
+    private List<DeviceMapper> deviceMappers;
+
     /** LVM 信息（非 Linux 或无 lvm2 时为空） */
     private LvmInfo lvm;
 
@@ -70,6 +73,19 @@ public class MonitorOverview {
         private long sizeBytes;
         /** 分区类型，如 linux */
         private String type;
+    }
+
+    /** Device Mapper 设备（LVM 逻辑卷映射 / dm-* 等） */
+    @Data
+    public static class DeviceMapper {
+        /** 设备路径，如 /dev/mapper/vg0-root 或 /dev/dm-0 */
+        private String name;
+
+        private long sizeBytes;
+        /** 文件系统类型（格式化方式），如 ext4 / xfs */
+        private String fsType;
+        /** 挂载点（未挂载则空串） */
+        private String mount;
     }
 
     /** LVM 信息（由 pvs / vgs / lvs 命令解析） */

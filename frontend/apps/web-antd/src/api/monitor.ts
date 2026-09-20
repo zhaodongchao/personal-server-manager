@@ -43,6 +43,14 @@ export namespace MonitorApi {
     type: string;
   }
 
+  /** Device Mapper 设备（LVM 逻辑卷映射 / dm-* 等） */
+  export interface DeviceMapper {
+    name: string;
+    sizeBytes: number;
+    fsType: string;
+    mount: string;
+  }
+
   /** LVM 信息（与后端 MonitorOverview.LvmInfo 一致） */
   export interface LvmInfo {
     physicalVolumes: LvmPhysicalVolume[];
@@ -87,6 +95,7 @@ export namespace MonitorApi {
     cpuLogicalCores: number;
     disks: DiskInfo[];
     physicalDisks: PhysicalDisk[];
+    deviceMappers: DeviceMapper[];
     lvm: LvmInfo;
     interfaces: NetInterface[];
     latest: MetricFrame;

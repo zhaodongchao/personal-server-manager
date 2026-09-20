@@ -1,10 +1,10 @@
 package com.serverpanel.common.core;
 
-import lombok.Getter;
-import lombok.Setter;
-
 import java.io.Serial;
 import java.io.Serializable;
+
+import lombok.Getter;
+import lombok.Setter;
 
 /**
  * 通用分页查询参数。

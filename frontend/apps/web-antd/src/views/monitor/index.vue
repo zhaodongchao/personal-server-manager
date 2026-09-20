@@ -495,7 +495,7 @@ onBeforeUnmount(() => {
                     size="small"
                   >
                     <Table.Column data-index="name" title="分区" />
-                    <Table.Column data-index="type" title="类型" />
+                    <Table.Column data-index="type" title="格式化" />
                     <Table.Column data-index="mount" title="挂载点">
                       <template #default="{ record: p }">
                         {{ p.mount || '-' }}
@@ -508,6 +508,43 @@ onBeforeUnmount(() => {
                     </Table.Column>
                   </Table>
                 </template>
+              </Table>
+            </TabPane>
+
+            <TabPane key="dm" tab="Device Mapper">
+              <div
+                v-if="!overview?.deviceMappers?.length"
+                class="py-6 text-center text-xs text-gray-400"
+              >
+                该服务器未配置 Device Mapper 设备。
+              </div>
+              <Table
+                v-else
+                :data-source="overview?.deviceMappers ?? []"
+                :pagination="false"
+                row-key="name"
+                size="small"
+              >
+                <Table.Column title="设备">
+                  <template #default="{ record }">
+                    {{ record.name }}
+                  </template>
+                </Table.Column>
+                <Table.Column title="容量">
+                  <template #default="{ record }">
+                    {{ formatBytes(record.sizeBytes) }}
+                  </template>
+                </Table.Column>
+                <Table.Column title="格式化">
+                  <template #default="{ record }">
+                    {{ record.fsType || '-' }}
+                  </template>
+                </Table.Column>
+                <Table.Column title="挂载点">
+                  <template #default="{ record }">
+                    {{ record.mount || '-' }}
+                  </template>
+                </Table.Column>
               </Table>
             </TabPane>
 

@@ -7,7 +7,9 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -196,8 +198,11 @@ public class MetricsCollector {
         vo.setCpuLogicalCores(processor.getLogicalProcessorCount());
 
         vo.setDisks(collectDisks());
-        vo.setPhysicalDisks(collectPhysicalDisks(hardware));
-        vo.setLvm(collectLvm());
+        LsblkData lsblk = loadLsblkData();
+        vo.setPhysicalDisks(
+                lsblk.physicalDisks.isEmpty() ? collectPhysicalDisksFromOshi(hardware) : lsblk.physicalDisks);
+        vo.setDeviceMappers(lsblk.deviceMappers);
+        vo.setLvm(collectLvm(lsblk));
 
         List<MonitorOverview.NetInterface> interfaces = new ArrayList<>();
         for (NetworkIF netif : hardware.getNetworkIFs()) {
@@ -368,53 +373,178 @@ public class MetricsCollector {
         return list.isEmpty() ? List.of() : list;
     }
 
-    /** 采集物理磁盘：优先 sudo lsblk（树状嵌套），失败回退 OSHI */
-    private List<MonitorOverview.PhysicalDisk> collectPhysicalDisks(HardwareAbstractionLayer hardware) {
-        List<MonitorOverview.PhysicalDisk> fromLsblk = collectPhysicalDisksFromLsblk();
-        return fromLsblk.isEmpty() ? collectPhysicalDisksFromOshi(hardware) : fromLsblk;
+    /** 单次 lsblk 扫描结果：物理磁盘 / Device Mapper / LVM 拓扑回退数据 */
+    private static class LsblkData {
+        final List<MonitorOverview.PhysicalDisk> physicalDisks = new ArrayList<>();
+        final List<MonitorOverview.DeviceMapper> deviceMappers = new ArrayList<>();
+        final List<MonitorOverview.PhysicalVolume> physicalVolumes = new ArrayList<>();
+        final List<MonitorOverview.VolumeGroup> volumeGroups = new ArrayList<>();
+        final List<MonitorOverview.LogicalVolume> logicalVolumes = new ArrayList<>();
+        /** VG 聚合临时态（名称 → 统计），遍历结束后转为 volumeGroups */
+        final Map<String, VgAgg> vgAgg = new LinkedHashMap<>();
     }
 
-    /** 通过 sudo lsblk（JSON）采集物理磁盘及其分区（type=disk 为磁盘，type=part 为分区） */
-    private List<MonitorOverview.PhysicalDisk> collectPhysicalDisksFromLsblk() {
+    /** VG 聚合统计（由 lsblk LVM 拓扑推导，用于 pvs/vgs/lvs 不可用时的回退） */
+    private static class VgAgg {
+        long size;
+        long lvSize;
+        int pvCount;
+        int lvCount;
+    }
+
+    /** 非真实磁盘的设备名前缀：loop/dm/ram/sr 等虚拟或只读设备不作为物理磁盘展示 */
+    private static final Set<String> PHONY_DISK_PREFIX = Set.of("loop", "nbd", "ram", "sr", "fd", "dm", "zram");
+
+    /** 通过 sudo lsblk（JSON）一次性采集物理磁盘、Device Mapper 与 LVM 拓扑数据 */
+    private LsblkData loadLsblkData() {
+        LsblkData data = new LsblkData();
         try {
             ExecResult result = commandExecutor.execSudo(
                     "lsblk", "-J", "-b", "-o", "NAME,SIZE,TYPE,FSTYPE,MODEL,SERIAL,MOUNTPOINTS");
             if (!result.isSuccess()
                     || result.getStdout() == null
                     || result.getStdout().isBlank()) {
-                return List.of();
+                return data;
             }
-            List<MonitorOverview.PhysicalDisk> list = new ArrayList<>();
             JsonNode root = objectMapper.readTree(result.getStdout());
             for (JsonNode node : root.path("blockdevices")) {
-                if (!"disk".equals(node.path("type").asText())) {
+                collectLsblkNode(node, data);
+            }
+        } catch (Exception e) {
+            log.warn("lsblk 采集失败（物理磁盘/Device Mapper/LVM 回退置空）：{}", e.getMessage());
+        }
+        return data;
+    }
+
+    /** 递归遍历 lsblk 树节点，分别归类物理磁盘、Device Mapper 与 LVM 拓扑 */
+    private void collectLsblkNode(JsonNode node, LsblkData data) {
+        String type = node.path("type").asText("");
+        if ("lvm".equals(type)) {
+            // LVM 逻辑卷：既是 Device Mapper 设备，也是 LV 拓扑
+            addLvmNode(node, data);
+        } else if ("dm".equals(type)) {
+            data.deviceMappers.add(buildMapper(node));
+        } else if ("disk".equals(type) && isRealDisk(node.path("name").asText(""))) {
+            data.physicalDisks.add(buildPhysicalDisk(node));
+        } else if ("part".equals(type)) {
+            // 分区可能是物理卷（PV），其 children 挂有 type=lvm 的逻辑卷
+            registerPhysicalVolumeIfPv(node, data);
+        }
+        JsonNode children = node.path("children");
+        if (children.isArray()) {
+            for (JsonNode child : children) {
+                collectLsblkNode(child, data);
+            }
+        }
+    }
+
+    /** 解析并登记一个逻辑卷（type=lvm）节点：LV 拓扑 + Device Mapper */
+    private void addLvmNode(JsonNode node, LsblkData data) {
+        String lvName = node.path("name").asText(""); // 形如 vg0-root
+        long size = parseLongVal(node.path("size").asText());
+        String vg = lvVg(lvName);
+
+        MonitorOverview.LogicalVolume lv = new MonitorOverview.LogicalVolume();
+        lv.setName(lvName);
+        lv.setVg(vg);
+        lv.setSizeBytes(size);
+        data.logicalVolumes.add(lv);
+
+        data.deviceMappers.add(buildMapper(node));
+
+        if (!vg.isEmpty()) {
+            VgAgg agg = data.vgAgg.computeIfAbsent(vg, k -> new VgAgg());
+            agg.lvSize += size;
+            agg.lvCount++;
+        }
+    }
+
+    /** 若分区是物理卷（children 含 type=lvm），登记 PV 并累计所属 VG 的容量 */
+    private void registerPhysicalVolumeIfPv(JsonNode node, LsblkData data) {
+        JsonNode children = node.path("children");
+        if (!children.isArray()) {
+            return;
+        }
+        String vg = "";
+        for (JsonNode child : children) {
+            if ("lvm".equals(child.path("type").asText(""))) {
+                vg = lvVg(child.path("name").asText(""));
+                break;
+            }
+        }
+        if (vg.isEmpty()) {
+            return;
+        }
+        MonitorOverview.PhysicalVolume pv = new MonitorOverview.PhysicalVolume();
+        pv.setName("/dev/" + node.path("name").asText());
+        pv.setVg(vg);
+        pv.setSizeBytes(parseLongVal(node.path("size").asText()));
+        pv.setFreeBytes(0);
+        data.physicalVolumes.add(pv);
+
+        VgAgg agg = data.vgAgg.computeIfAbsent(vg, k -> new VgAgg());
+        agg.size += pv.getSizeBytes();
+        agg.pvCount++;
+    }
+
+    /** LVM 逻辑卷名（形如 vg0-root）推导卷组名：取第一个连字符之前的部分 */
+    private String lvVg(String lvName) {
+        int idx = lvName.indexOf('-');
+        return idx > 0 ? lvName.substring(0, idx) : "";
+    }
+
+    /** 是否为真实物理磁盘（排除 loop/dm/ram 等虚拟设备） */
+    private boolean isRealDisk(String name) {
+        if (name == null) {
+            return false;
+        }
+        for (String prefix : PHONY_DISK_PREFIX) {
+            if (name.startsWith(prefix)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** 校验/归一化 lsblk 的 model/serial，避免 null */
+    private String nullToEmpty(String s) {
+        return s == null || "n/a".equals(s) ? "" : s;
+    }
+
+    /** 由 lsblk 节点构建物理磁盘（仅含真实磁盘及其分区，分区带文件系统类型） */
+    private MonitorOverview.PhysicalDisk buildPhysicalDisk(JsonNode node) {
+        MonitorOverview.PhysicalDisk disk = new MonitorOverview.PhysicalDisk();
+        disk.setName("/dev/" + node.path("name").asText());
+        disk.setModel(nullToEmpty(node.path("model").asText()));
+        disk.setSerial(nullToEmpty(node.path("serial").asText()));
+        disk.setSizeBytes(parseLongVal(node.path("size").asText()));
+        List<MonitorOverview.Partition> parts = new ArrayList<>();
+        JsonNode children = node.path("children");
+        if (children.isArray()) {
+            for (JsonNode child : children) {
+                if (!"part".equals(child.path("type").asText(""))) {
                     continue;
                 }
-                MonitorOverview.PhysicalDisk disk = new MonitorOverview.PhysicalDisk();
-                disk.setName("/dev/" + node.path("name").asText());
-                disk.setModel(nullToEmpty(node.path("model").asText()));
-                disk.setSerial(nullToEmpty(node.path("serial").asText()));
-                disk.setSizeBytes(parseLongVal(node.path("size").asText()));
-                List<MonitorOverview.Partition> parts = new ArrayList<>();
-                for (JsonNode child : node.path("children")) {
-                    if (!"part".equals(child.path("type").asText())) {
-                        continue;
-                    }
-                    MonitorOverview.Partition p = new MonitorOverview.Partition();
-                    p.setName("/dev/" + child.path("name").asText());
-                    p.setSizeBytes(parseLongVal(child.path("size").asText()));
-                    p.setType(child.path("fstype").asText(""));
-                    p.setMount(firstMount(child.path("mountpoints")));
-                    parts.add(p);
-                }
-                disk.setPartitions(parts.isEmpty() ? List.of() : parts);
-                list.add(disk);
+                MonitorOverview.Partition p = new MonitorOverview.Partition();
+                p.setName("/dev/" + child.path("name").asText());
+                p.setSizeBytes(parseLongVal(child.path("size").asText()));
+                p.setType(child.path("fstype").asText(""));
+                p.setMount(firstMount(child.path("mountpoints")));
+                parts.add(p);
             }
-            return list.isEmpty() ? List.of() : list;
-        } catch (Exception e) {
-            log.warn("lsblk 采集物理磁盘失败，回退 OSHI：{}", e.getMessage());
-            return List.of();
         }
+        disk.setPartitions(parts.isEmpty() ? List.of() : parts);
+        return disk;
+    }
+
+    /** 由 lsblk 节点构建 Device Mapper 设备 */
+    private MonitorOverview.DeviceMapper buildMapper(JsonNode node) {
+        MonitorOverview.DeviceMapper mapper = new MonitorOverview.DeviceMapper();
+        mapper.setName("/dev/" + node.path("name").asText());
+        mapper.setSizeBytes(parseLongVal(node.path("size").asText()));
+        mapper.setFsType(node.path("fstype").asText(""));
+        mapper.setMount(firstMount(node.path("mountpoints")));
+        return mapper;
     }
 
     /** 取 lsblk mountpoints 数组第一个非空挂载点，无则空串 */
@@ -453,18 +583,41 @@ public class MetricsCollector {
         return list.isEmpty() ? List.of() : list;
     }
 
-    /** 空串归一化；lsblk 无型号/序列号时输出为空，避免前端展示 null */
-    private String nullToEmpty(String s) {
-        return s == null || "n/a".equals(s) ? "" : s;
+    /** 采集 LVM 信息：优先 pvs/vgs/lvs（含 PE/空间明细），工具或 sudo 不可用时回退 lsblk 拓扑 */
+    private MonitorOverview.LvmInfo collectLvm(LsblkData lsblk) {
+        MonitorOverview.LvmInfo lvm = new MonitorOverview.LvmInfo();
+        List<MonitorOverview.PhysicalVolume> pvs = parsePvs();
+        List<MonitorOverview.VolumeGroup> vgs = parseVgs();
+        List<MonitorOverview.LogicalVolume> lvs = parseLvs();
+        // lvm2 工具/免密 sudo 不可用导致报表为空时，用 lsblk 拓扑兜底，保证页面有数据
+        if (pvs.isEmpty() || vgs.isEmpty() || lvs.isEmpty()) {
+            pvs = pvs.isEmpty() ? lsblk.physicalVolumes : pvs;
+            vgs = vgs.isEmpty() ? deriveVolumeGroups(lsblk) : vgs;
+            lvs = lvs.isEmpty() ? lsblk.logicalVolumes : lvs;
+        }
+        lvm.setPhysicalVolumes(pvs);
+        lvm.setVolumeGroups(vgs);
+        lvm.setLogicalVolumes(lvs);
+        return lvm;
     }
 
-    /** 采集 LVM 信息；非 Linux 或无 lvm2 工具时返回空结构，不中断概览 */
-    private MonitorOverview.LvmInfo collectLvm() {
-        MonitorOverview.LvmInfo lvm = new MonitorOverview.LvmInfo();
-        lvm.setPhysicalVolumes(parsePvs());
-        lvm.setVolumeGroups(parseVgs());
-        lvm.setLogicalVolumes(parseLvs());
-        return lvm;
+    /** 由遍历期间聚合的 lsblk LVM 拓扑生成卷组列表（回退用） */
+    private List<MonitorOverview.VolumeGroup> deriveVolumeGroups(LsblkData lsblk) {
+        List<MonitorOverview.VolumeGroup> list = new ArrayList<>();
+        for (Map.Entry<String, VgAgg> entry : lsblk.vgAgg.entrySet()) {
+            VgAgg agg = entry.getValue();
+            if (agg.lvCount == 0 && agg.pvCount == 0) {
+                continue;
+            }
+            MonitorOverview.VolumeGroup vg = new MonitorOverview.VolumeGroup();
+            vg.setName(entry.getKey());
+            vg.setPvCount(agg.pvCount);
+            vg.setLvCount(agg.lvCount);
+            vg.setSizeBytes(agg.size);
+            vg.setFreeBytes(Math.max(0, agg.size - agg.lvSize));
+            list.add(vg);
+        }
+        return list.isEmpty() ? List.of() : list;
     }
 
     /** sudo 执行 LVM 只读报表命令并解析为 JSON 行；失败按空处理 */
