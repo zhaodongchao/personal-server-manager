@@ -1,7 +1,11 @@
 import { initPreferences } from '@vben/preferences';
 import { unmountGlobalLoading } from '@vben/utils';
 
-import { overridesPreferences, preferencesExtension } from './preferences';
+import {
+  fixLegacyExternalAssets,
+  overridesPreferences,
+  preferencesExtension,
+} from './preferences';
 
 /**
  * 应用初始化完成之后再进行页面加载渲染
@@ -19,6 +23,11 @@ async function initApplication() {
     namespace,
     overrides: overridesPreferences,
   });
+
+  // 偏好设置是「缓存优先」合并：localStorage 中旧版本写入的 logo / 默认头像
+  // 会盖住上面的站内新默认值，且旧值指向 unpkg.com（生产网络不可达，会让
+  // <img> 挂起到 TCP 超时并阻塞 load 事件）。故在挂载前显式纠正一次。
+  fixLegacyExternalAssets();
 
   // 启动应用并挂载
   // vue应用主要逻辑及视图
