@@ -113,8 +113,12 @@ const [QuickNavForm, quickNavFormApi] = useVbenForm({
       label: '路径',
     },
     {
-      component: 'Input',
-      componentProps: { placeholder: '如 lucide:gitlab' },
+      component: 'IconPicker',
+      componentProps: {
+        iconClass: 'size-4',
+        placeholder: '选择图标',
+        prefix: 'lucide',
+      },
       defaultValue: 'lucide:app-window',
       fieldName: 'icon',
       label: '图标',
