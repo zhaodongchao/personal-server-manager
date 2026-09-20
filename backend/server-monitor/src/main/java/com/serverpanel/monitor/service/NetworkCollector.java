@@ -204,12 +204,34 @@ public class NetworkCollector {
         String category = classify(name, item.isLoopback(), bridge, item.isBond(), hasDevice);
         item.setCategory(category);
         item.setTypeLabel(typeLabel(category, dockerRelated));
-        if (item.getDriver().isEmpty()) {
+        if (item.getDriver() == null || item.getDriver().isEmpty()) {
             item.setDriver(defaultDriver(category));
         }
 
+        normalizeStrings(item);
         fillCounters(item, counters, seconds);
         return item;
+    }
+
+    /**
+     * 字符串字段归一：DTO 对外声明这些字段为非空，sysfs 未提供时（如 lo 无
+     * device/uevent、虚拟设备无 PCI 槽位）统一落空串，避免序列化与前端拿到 null。
+     *
+     * @param item 待归一的网卡明细
+     */
+    private void normalizeStrings(NetworkInfo.NetInterface item) {
+        if (item.getDriver() == null) {
+            item.setDriver("");
+        }
+        if (item.getBusInfo() == null) {
+            item.setBusInfo("");
+        }
+        if (item.getVendorId() == null) {
+            item.setVendorId("");
+        }
+        if (item.getVendor() == null) {
+            item.setVendor("");
+        }
     }
 
     /** 物理网卡归属信息：device/uevent（DRIVER / PCI_SLOT_NAME / PCI_ID）优先，虚拟设备取 uevent 的 DEVTYPE */
