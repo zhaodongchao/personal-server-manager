@@ -1,8 +1,8 @@
 package com.serverpanel.framework.security;
 
-import cn.dev33.satoken.stp.StpUtil;
-
 import java.util.Optional;
+
+import cn.dev33.satoken.stp.StpUtil;
 
 /**
  * 当前登录用户工具（Sa-Token 封装）。
@@ -14,6 +14,7 @@ public final class LoginHelper {
 
     /** Session key */
     public static final String KEY_USERNAME = "username";
+
     public static final String KEY_NICKNAME = "nickname";
 
     private LoginHelper() {}
@@ -31,7 +32,7 @@ public final class LoginHelper {
     /** 当前昵称（未设置时回退登录名） */
     public static String getNickname() {
         return Optional.ofNullable((String) StpUtil.getSession().get(KEY_NICKNAME))
-            .orElse(getUsername());
+                .orElse(getUsername());
     }
 
     /** 是否已登录 */

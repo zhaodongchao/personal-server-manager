@@ -1,9 +1,9 @@
 package com.serverpanel.monitor.dto;
 
-import lombok.Data;
-
 import java.io.Serial;
 import java.io.Serializable;
+
+import lombok.Data;
 
 /**
  * 实时监控帧（Redis 环形缓存 & WebSocket 推送载体）。

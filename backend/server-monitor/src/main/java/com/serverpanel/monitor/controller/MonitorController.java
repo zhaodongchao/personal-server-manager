@@ -1,18 +1,19 @@
 package com.serverpanel.monitor.controller;
 
-import cn.dev33.satoken.annotation.SaCheckPermission;
-import com.serverpanel.common.core.R;
-import com.serverpanel.monitor.dto.MetricFrame;
-import com.serverpanel.monitor.dto.MonitorOverview;
-import com.serverpanel.monitor.service.MetricsCollector;
-import lombok.RequiredArgsConstructor;
+import java.time.Duration;
+import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.time.Duration;
-import java.util.List;
+import com.serverpanel.common.core.R;
+import com.serverpanel.monitor.dto.MetricFrame;
+import com.serverpanel.monitor.dto.MonitorOverview;
+import com.serverpanel.monitor.service.MetricsCollector;
+
+import cn.dev33.satoken.annotation.SaCheckPermission;
+import lombok.RequiredArgsConstructor;
 
 /**
  * 监控接口。
