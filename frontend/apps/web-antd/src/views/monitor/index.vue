@@ -64,11 +64,10 @@ const latest = () => frames.value.at(-1);
 const hasLvm = computed(() => {
   const lvm = overview.value?.lvm;
   if (!lvm) return false;
-  return (
-    lvm.physicalVolumes.length > 0 ||
-    lvm.volumeGroups.length > 0 ||
-    lvm.logicalVolumes.length > 0
-  );
+  const pvCount = lvm.physicalVolumes?.length ?? 0;
+  const vgCount = lvm.volumeGroups?.length ?? 0;
+  const lvCount = lvm.logicalVolumes?.length ?? 0;
+  return pvCount > 0 || vgCount > 0 || lvCount > 0;
 });
 
 /** 文件系统树节点 */
