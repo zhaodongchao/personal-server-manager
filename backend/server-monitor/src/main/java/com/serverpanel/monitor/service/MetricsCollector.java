@@ -3,6 +3,7 @@ package com.serverpanel.monitor.service;
 import java.io.File;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -199,8 +200,11 @@ public class MetricsCollector {
 
         vo.setDisks(collectDisks());
         LsblkData lsblk = loadLsblkData();
-        vo.setPhysicalDisks(
-                lsblk.physicalDisks.isEmpty() ? collectPhysicalDisksFromOshi(hardware) : lsblk.physicalDisks);
+        // lsblk 未产出任何物理磁盘/Device Mapper（如权限异常或全部为虚拟设备）时回退 OSHI 硬件扫描
+        if (lsblk.physicalDisks.isEmpty() && lsblk.deviceMappers.isEmpty()) {
+            fillFromOshi(lsblk, hardware);
+        }
+        vo.setPhysicalDisks(lsblk.physicalDisks);
         vo.setDeviceMappers(lsblk.deviceMappers);
         vo.setLvm(collectLvm(lsblk));
 
@@ -314,7 +318,8 @@ public class MetricsCollector {
     /** 通过 sudo findmnt 采集所有真实文件系统挂载点（含树状层级），跳过伪文件系统 */
     private List<MonitorOverview.DiskInfo> collectDisksFromFindmnt() {
         try {
-            ExecResult result = commandExecutor.execSudo("findmnt", "-J", "-b", "-o", "TARGET,FSTYPE,SIZE,AVAIL");
+            // findmnt 读取 /proc/mounts，无需 root；不依赖 sudo，避免无免密 sudo 环境下采集为空
+            ExecResult result = commandExecutor.exec("findmnt", "-J", "-b", "-o", "TARGET,FSTYPE,SIZE,AVAIL");
             if (!result.isSuccess()
                     || result.getStdout() == null
                     || result.getStdout().isBlank()) {
@@ -395,12 +400,13 @@ public class MetricsCollector {
     /** 非真实磁盘的设备名前缀：loop/dm/ram/sr 等虚拟或只读设备不作为物理磁盘展示 */
     private static final Set<String> PHONY_DISK_PREFIX = Set.of("loop", "nbd", "ram", "sr", "fd", "dm", "zram");
 
-    /** 通过 sudo lsblk（JSON）一次性采集物理磁盘、Device Mapper 与 LVM 拓扑数据 */
+    /** 通过 lsblk（JSON）一次性采集物理磁盘、Device Mapper 与 LVM 拓扑数据（无需 sudo） */
     private LsblkData loadLsblkData() {
         LsblkData data = new LsblkData();
         try {
-            ExecResult result = commandExecutor.execSudo(
-                    "lsblk", "-J", "-b", "-o", "NAME,SIZE,TYPE,FSTYPE,MODEL,SERIAL,MOUNTPOINTS");
+            // lsblk 读取 /sys，无需 root；用普通执行而非 sudo，保证无免密 sudo 环境下仍能采集
+            ExecResult result =
+                    commandExecutor.exec("lsblk", "-J", "-b", "-o", "NAME,SIZE,TYPE,FSTYPE,MODEL,SERIAL,MOUNTPOINTS");
             if (!result.isSuccess()
                     || result.getStdout() == null
                     || result.getStdout().isBlank()) {
@@ -423,12 +429,17 @@ public class MetricsCollector {
             // LVM 逻辑卷：既是 Device Mapper 设备，也是 LV 拓扑
             addLvmNode(node, data);
         } else if ("dm".equals(type)) {
+            // 独立的 device mapper 设备（非 LVM 逻辑卷，如 dm-crypt/md 等）归入 DM 集合
             data.deviceMappers.add(buildMapper(node));
-        } else if ("disk".equals(type) && isRealDisk(node.path("name").asText(""))) {
-            data.physicalDisks.add(buildPhysicalDisk(node));
+        } else if ("disk".equals(type)) {
+            // 整盘或分区若挂有 type=lvm 子节点即为物理卷 PV
+            registerPvIfLvmChild(node, data);
+            if (isRealDisk(node.path("name").asText(""))) {
+                data.physicalDisks.add(buildPhysicalDisk(node));
+            }
         } else if ("part".equals(type)) {
             // 分区可能是物理卷（PV），其 children 挂有 type=lvm 的逻辑卷
-            registerPhysicalVolumeIfPv(node, data);
+            registerPvIfLvmChild(node, data);
         }
         JsonNode children = node.path("children");
         if (children.isArray()) {
@@ -459,8 +470,8 @@ public class MetricsCollector {
         }
     }
 
-    /** 若分区是物理卷（children 含 type=lvm），登记 PV 并累计所属 VG 的容量 */
-    private void registerPhysicalVolumeIfPv(JsonNode node, LsblkData data) {
+    /** 若整盘或分区挂有 type=lvm 子节点（即物理卷 PV），登记 PV 并累计所属 VG 的容量 */
+    private void registerPvIfLvmChild(JsonNode node, LsblkData data) {
         JsonNode children = node.path("children");
         if (!children.isArray()) {
             return;
@@ -493,13 +504,21 @@ public class MetricsCollector {
         return idx > 0 ? lvName.substring(0, idx) : "";
     }
 
-    /** 是否为真实物理磁盘（排除 loop/dm/ram 等虚拟设备） */
+    /** 是否为真实物理磁盘（排除 loop/dm/ram 等虚拟设备；兼容有/无 /dev/ 前缀） */
     private boolean isRealDisk(String name) {
         if (name == null) {
             return false;
         }
+        String base = name;
+        int slash = base.lastIndexOf('/');
+        if (slash >= 0) {
+            base = base.substring(slash + 1);
+        }
+        if (base.isEmpty()) {
+            return false;
+        }
         for (String prefix : PHONY_DISK_PREFIX) {
-            if (name.startsWith(prefix)) {
+            if (base.startsWith(prefix)) {
                 return false;
             }
         }
@@ -511,12 +530,37 @@ public class MetricsCollector {
         return s == null || "n/a".equals(s) ? "" : s;
     }
 
+    /** 尝试从 /sys/block/<dev>/device/<attr> 读取磁盘属性（如 model/serial），失败返回空串 */
+    private String readSysfsAttr(String devName, String attr) {
+        try {
+            String base = devName;
+            int slash = base.lastIndexOf('/');
+            if (slash >= 0) {
+                base = base.substring(slash + 1);
+            }
+            byte[] bytes = java.nio.file.Files.readAllBytes(java.nio.file.Path.of("/sys/block", base, "device", attr));
+            return new String(bytes, StandardCharsets.UTF_8).trim();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
     /** 由 lsblk 节点构建物理磁盘（仅含真实磁盘及其分区，分区带文件系统类型） */
     private MonitorOverview.PhysicalDisk buildPhysicalDisk(JsonNode node) {
         MonitorOverview.PhysicalDisk disk = new MonitorOverview.PhysicalDisk();
-        disk.setName("/dev/" + node.path("name").asText());
-        disk.setModel(nullToEmpty(node.path("model").asText()));
-        disk.setSerial(nullToEmpty(node.path("serial").asText()));
+        String devName = node.path("name").asText("");
+        disk.setName("/dev/" + devName);
+        // 优先取 lsblk 的 MODEL/SERIAL，缺失时读取 /sys/block 属性
+        String model = nullToEmpty(node.path("model").asText());
+        String serial = nullToEmpty(node.path("serial").asText());
+        if (model.isEmpty()) {
+            model = readSysfsAttr(devName, "model");
+        }
+        if (serial.isEmpty()) {
+            serial = readSysfsAttr(devName, "serial");
+        }
+        disk.setModel(model);
+        disk.setSerial(serial);
         disk.setSizeBytes(parseLongVal(node.path("size").asText()));
         List<MonitorOverview.Partition> parts = new ArrayList<>();
         JsonNode children = node.path("children");
@@ -559,28 +603,62 @@ public class MetricsCollector {
         return "";
     }
 
-    /** 回退：OSHI 物理磁盘（HWDiskStore） */
-    private List<MonitorOverview.PhysicalDisk> collectPhysicalDisksFromOshi(HardwareAbstractionLayer hardware) {
-        List<MonitorOverview.PhysicalDisk> list = new ArrayList<>();
+    /** 回退：OSHI 硬件扫描，将磁盘分为真实物理磁盘与 Device Mapper（排除 loop/ram 等虚拟设备） */
+    private void fillFromOshi(LsblkData data, HardwareAbstractionLayer hardware) {
         for (HWDiskStore store : hardware.getDiskStores()) {
-            MonitorOverview.PhysicalDisk disk = new MonitorOverview.PhysicalDisk();
-            disk.setName(store.getName());
-            disk.setModel(nullToEmpty(store.getModel()));
-            disk.setSerial(nullToEmpty(store.getSerial()));
-            disk.setSizeBytes(store.getSize());
-            List<MonitorOverview.Partition> parts = new ArrayList<>();
-            for (HWPartition part : store.getPartitions()) {
-                MonitorOverview.Partition p = new MonitorOverview.Partition();
-                p.setName(part.getIdentification());
-                p.setMount(part.getMountPoint() == null ? "" : part.getMountPoint());
-                p.setSizeBytes(part.getSize());
-                p.setType(part.getType());
-                parts.add(p);
+            String name = store.getName(); // 形如 /dev/sda 或 /dev/dm-0
+            String base = name;
+            int slash = base.lastIndexOf('/');
+            if (slash >= 0) {
+                base = base.substring(slash + 1);
             }
-            disk.setPartitions(parts.isEmpty() ? List.of() : parts);
-            list.add(disk);
+            // 虚拟设备：dm 归入 Device Mapper 集合，loop/ram/nbd 等直接忽略
+            if (!isRealDisk(base)) {
+                if (base.startsWith("dm")) {
+                    data.deviceMappers.add(buildMapperFromOshi(store));
+                }
+                continue;
+            }
+            data.physicalDisks.add(buildPhysicalDiskFromOshi(store));
         }
-        return list.isEmpty() ? List.of() : list;
+    }
+
+    /** 由 OSHI 构建 Device Mapper 设备（OSHI 不提供文件系统类型/挂载点，置空） */
+    private MonitorOverview.DeviceMapper buildMapperFromOshi(HWDiskStore store) {
+        MonitorOverview.DeviceMapper mapper = new MonitorOverview.DeviceMapper();
+        mapper.setName(store.getName());
+        mapper.setSizeBytes(store.getSize());
+        mapper.setFsType("");
+        mapper.setMount("");
+        return mapper;
+    }
+
+    /** 由 OSHI 构建真实物理磁盘（型号/序列号缺失时尝试 /sys/block 读取） */
+    private MonitorOverview.PhysicalDisk buildPhysicalDiskFromOshi(HWDiskStore store) {
+        MonitorOverview.PhysicalDisk disk = new MonitorOverview.PhysicalDisk();
+        disk.setName(store.getName());
+        String model = nullToEmpty(store.getModel());
+        String serial = nullToEmpty(store.getSerial());
+        if (model.isEmpty()) {
+            model = readSysfsAttr(store.getName(), "model");
+        }
+        if (serial.isEmpty()) {
+            serial = readSysfsAttr(store.getName(), "serial");
+        }
+        disk.setModel(model);
+        disk.setSerial(serial);
+        disk.setSizeBytes(store.getSize());
+        List<MonitorOverview.Partition> parts = new ArrayList<>();
+        for (HWPartition part : store.getPartitions()) {
+            MonitorOverview.Partition p = new MonitorOverview.Partition();
+            p.setName(part.getIdentification());
+            p.setMount(part.getMountPoint() == null ? "" : part.getMountPoint());
+            p.setSizeBytes(part.getSize());
+            p.setType(part.getType());
+            parts.add(p);
+        }
+        disk.setPartitions(parts.isEmpty() ? List.of() : parts);
+        return disk;
     }
 
     /** 采集 LVM 信息：优先 pvs/vgs/lvs（含 PE/空间明细），工具或 sudo 不可用时回退 lsblk 拓扑 */
