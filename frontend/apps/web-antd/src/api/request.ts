@@ -91,9 +91,37 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
     }),
   );
 
+  // 业务码 401 兜底处理。
+  // 服务端统一以 HTTP 200 返回业务错误码（R<T>.code 在响应体里），而 Vben 的
+  // authenticateResponseInterceptor 只在 HTTP 状态码为 401 时触发重新认证，
+  // 因此 token 失效时（HTTP 200 + code=401）不会登出：路由守卫中的
+  // fetchUserInfo 抛异常会导致导航被中断，页面永久停留在启动 loading，
+  // 且刷新无效（失效 token 仍在本地存储），只能手动清理缓存才能恢复。
+  // 这里显式识别业务码并触发重新认证；用标志位避免 logout 请求自身
+  // 再次触发该逻辑造成递归。
+  let isHandlingBusinessUnauthorized = false;
+  client.addResponseInterceptor({
+    rejected: async (error) => {
+      const businessCode = error?.response?.data?.code;
+      if (Number(businessCode) === 401 && !isHandlingBusinessUnauthorized) {
+        isHandlingBusinessUnauthorized = true;
+        try {
+          await doReAuthenticate();
+        } finally {
+          isHandlingBusinessUnauthorized = false;
+        }
+      }
+      throw error;
+    },
+  });
+
   // 通用的错误处理,如果没有进入上面的错误处理逻辑，就会进入这里
   client.addResponseInterceptor(
     errorMessageResponseInterceptor((msg: string, error) => {
+      // 业务码 401 已由上面的拦截器触发重新登录，不再重复弹出错误提示
+      if (Number(error?.response?.data?.code) === 401) {
+        return;
+      }
       // 这里可以根据业务进行定制,你可以拿到 error 内的信息进行定制化处理，根据不同的 code 做不同的提示，而不是直接使用 message.error 提示 msg
       // 当前mock接口返回的错误字段是 error 或者 message
       const responseData = error?.response?.data ?? {};

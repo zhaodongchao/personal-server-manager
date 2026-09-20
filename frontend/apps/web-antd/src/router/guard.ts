@@ -98,7 +98,20 @@ function setupAccessGuard(router: Router) {
 
     // 生成路由表
     // 当前登录用户拥有的角色标识列表
-    const userInfo = userStore.userInfo || (await authStore.fetchUserInfo());
+    // 兜底：token 失效或用户信息获取失败时清理登录态并回登录页，
+    // 避免异常冒泡导致导航被中断、页面永久卡在启动 loading
+    let userInfo = userStore.userInfo;
+    if (!userInfo) {
+      try {
+        userInfo = await authStore.fetchUserInfo();
+      } catch {
+        userInfo = null;
+      }
+    }
+    if (!userInfo) {
+      accessStore.setAccessToken(null);
+      return { path: LOGIN_PATH, replace: true };
+    }
     // 登录态建立后异步同步云端偏好设置（不 await：不阻塞路由首屏，本地缓存先行渲染）
     initPreferenceSync();
     const userRoles = userInfo.roles ?? [];
