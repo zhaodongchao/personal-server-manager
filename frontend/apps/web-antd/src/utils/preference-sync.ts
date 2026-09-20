@@ -19,6 +19,8 @@ import { useDebounceFn } from '@vueuse/core';
 import { getUserPreferenceApi, saveUserPreferenceApi } from '#/api';
 import type { UserPreference } from '#/api/preference';
 
+import { legacyAssetPatch } from '#/preferences';
+
 /** 防抖间隔（毫秒） */
 const SAVE_DEBOUNCE_MS = 800;
 
@@ -72,10 +74,19 @@ export async function initPreferenceSync() {
   }
   initialized = true;
 
+  let healedRemote = false;
+
   try {
     const remote = await getUserPreferenceApi();
     if (remote?.preferences) {
-      updatePreferences(remote.preferences);
+      // 云端偏好里可能仍存着历史脏数据（logo/头像指向 unpkg.com）。这里必须与
+      // 本地缓存走同一套纠正逻辑，否则登录后会被远端整体覆盖，站内 logo
+      // 又变回不可达的外链。
+      const patch = legacyAssetPatch(remote.preferences);
+      healedRemote = Boolean(patch);
+      updatePreferences(
+        patch ? { ...remote.preferences, ...patch } : remote.preferences,
+      );
     }
     if (remote?.custom) {
       updateCustomPreferences(remote.custom);
@@ -86,6 +97,16 @@ export async function initPreferenceSync() {
 
   // 远端数据（或本地兜底数据）应用完毕后建立基线，避免回显触发保存
   baseline = currentSnapshotJson();
+
+  // 云端偏好被纠正过：立刻回写一次，修复持久层中的历史脏数据，
+  // 避免下次登录又把 unpkg 旧值拉回来。
+  if (healedRemote) {
+    try {
+      await saveUserPreferenceApi(currentSnapshot());
+    } catch (error) {
+      console.warn('[preference-sync] heal remote preferences failed:', error);
+    }
+  }
 
   // 主偏好与自定义扩展偏好均为响应式代理，深度监听变更
   watch(preferences, () => debouncedSave(), { deep: true });

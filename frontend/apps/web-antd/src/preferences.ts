@@ -86,7 +86,6 @@ export const preferencesExtension =
     ],
   });
 
-
 /** 站内 logo 与默认头像（替代 Vben 内置的 unpkg.com 默认值） */
 export const LOCAL_AVATAR = '/avatar.svg';
 export const LOCAL_LOGO = '/logo.svg';
@@ -94,8 +93,54 @@ export const LOCAL_LOGO = '/logo.svg';
 /** 旧版本默认静态资源所在的外部 CDN（生产环境不可达，必须纠正掉） */
 const LEGACY_EXTERNAL_ASSET = /^https?:\/\/(?:cdn\.jsdelivr\.net|unpkg\.com)\//i;
 
+/** 偏好中可能指向外部 CDN 的两个字段所在的分支 */
+interface ExternalAssetBranches {
+  app?: { defaultAvatar?: unknown } | null;
+  logo?: { source?: unknown } | null;
+}
+
+/** 资源纠正补丁：只需给出需要改写的分支，未涉及字段由深合并保留 */
+export interface LegacyAssetPatch {
+  app?: { defaultAvatar: string };
+  logo?: { source: string };
+}
+
+/** 判断某个资源地址是否为历史遗留的外部 CDN 地址 */
+export function isLegacyExternalAsset(url: unknown): boolean {
+  return typeof url === 'string' && LEGACY_EXTERNAL_ASSET.test(url);
+}
+
 /**
- * 纠正历史偏好设置中指向外部 CDN 的 logo 与默认头像。
+ * 计算「把外部 CDN 资源替换为站内资源」所需的最小补丁。
+ *
+ * 抽成纯函数是为了让两条入口共用同一套判定：
+ * ① `initPreferences` 之后纠正 localStorage 缓存（{@link fixLegacyExternalAssets}）；
+ * ② 登录后拉取云端偏好时纠正服务端持久化的历史数据
+ *    （`utils/preference-sync.ts` 的 `initPreferenceSync`）。
+ * 否则云端那份旧值会在登录后把本地已纠正的值再覆盖回去。
+ *
+ * 返回的补丁可直接交给 `updatePreferences`——它是深合并，未涉及的字段不会丢失。
+ *
+ * @param source 待检查的偏好（本地缓存或服务端返回的偏好均可）
+ * @returns 最小补丁；无需纠正时返回 null
+ */
+export function legacyAssetPatch(
+  source: ExternalAssetBranches | null | undefined,
+): LegacyAssetPatch | null {
+  const patch: LegacyAssetPatch = {};
+
+  if (isLegacyExternalAsset(source?.logo?.source)) {
+    patch.logo = { source: LOCAL_LOGO };
+  }
+  if (isLegacyExternalAsset(source?.app?.defaultAvatar)) {
+    patch.app = { defaultAvatar: LOCAL_AVATAR };
+  }
+
+  return patch.logo || patch.app ? patch : null;
+}
+
+/**
+ * 纠正当前偏好设置中指向外部 CDN 的 logo 与默认头像（本地缓存入口）。
  *
  * Vben 的 `initPreferences` 采用「缓存优先」合并：localStorage 里由旧版本写入的
  * `logo.source` / `app.defaultAvatar` 会盖住新的站内默认值，导致老用户浏览器
@@ -108,21 +153,10 @@ const LEGACY_EXTERNAL_ASSET = /^https?:\/\/(?:cdn\.jsdelivr\.net|unpkg\.com)\//i
  * @returns 是否发生了纠正
  */
 export function fixLegacyExternalAssets(): boolean {
-  const { app, logo } = getPreferences();
-
-  const staleLogo =
-    typeof logo?.source === 'string' && LEGACY_EXTERNAL_ASSET.test(logo.source);
-  const staleAvatar =
-    typeof app?.defaultAvatar === 'string' &&
-    LEGACY_EXTERNAL_ASSET.test(app.defaultAvatar);
-
-  if (!staleLogo && !staleAvatar) {
+  const patch = legacyAssetPatch(getPreferences());
+  if (!patch) {
     return false;
   }
-
-  updatePreferences({
-    ...(staleAvatar ? { app: { defaultAvatar: LOCAL_AVATAR } } : {}),
-    ...(staleLogo ? { logo: { source: LOCAL_LOGO } } : {}),
-  });
+  updatePreferences(patch);
   return true;
 }
