@@ -36,6 +36,10 @@ spring:
     locations: classpath:db/migration
     baseline-on-migrate: true
     validate-on-migrate: true
+  # MongoDB（偏好设置等文档型存储）。SB4 起连接属性前缀为 spring.mongodb；
+  # 连接串可经 MONGODB_URI 覆盖（默认库名 server_panel，生产注入完整连接串含账号/认证库）
+  mongodb:
+    uri: ${MONGODB_URI:mongodb://127.0.0.1:27017/server_panel}
   data:
     redis:
       host: ${REDIS_HOST:localhost}

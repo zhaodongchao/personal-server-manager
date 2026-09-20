@@ -164,6 +164,32 @@ GET /api/v1/menu/all
 | `meta.hideInMenu` | boolean | 是否隐藏 |
 | `children` | RouteVO[] | 子路由 |
 
+### 8. 偏好设置（按用户维度，存 MongoDB）
+
+```
+GET /api/v1/user/preference
+```
+
+无需权限码，仅需登录（与 `/user/info` 一致）。响应 `data`：
+
+| 字段 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `preferences` | object | Vben preferences 全量 JSON（13 组） |
+| `custom` | object | 自定义扩展偏好（4 字段），可空 |
+
+> 用户从未配置过时，返回**后端写死的默认配置**（`DefaultPreferenceConfig`），恒非空。
+
+```
+PUT /api/v1/user/preference
+```
+
+请求体（全量覆盖，upsert 一人一档）：
+
+| 字段 | 类型 | 校验 |
+| ---- | ---- | ---- |
+| `preferences` | object | 必填，偏好全量 JSON |
+| `custom` | object | 可选，自定义扩展偏好 |
+
 ## 三、系统管理 `/api/v1/system`
 
 ### 1. 用户管理 `system/user`
