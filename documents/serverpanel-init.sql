@@ -340,6 +340,7 @@ INSERT INTO sys_menu (id, parent_id, menu_name, menu_type, route_path, component
 (4034, 403, '立即执行', 'F', NULL, NULL, 'ops:cron:run', NULL, 4, 1, 1),
 (404, 400, '防火墙', 'C', '/ops/firewall', '/ops/firewall/index', 'ops:firewall:list', NULL, 4, 1, 1),
 (4041, 404, '防火墙写操作', 'F', NULL, NULL, 'ops:firewall:write', NULL, 1, 1, 1),
+(405, 400, '服务器监控', 'C', '/monitor', '/monitor/index', 'dashboard:view', 'lucide:gauge', 5, 1, 1),
 -- 应用栈
 (500, 0,   '应用栈', 'M', '/appstack', NULL, NULL, 'lucide:layers', 4, 1, 1),
 (501, 500, 'Docker', 'C', '/appstack/docker', '/appstack/docker/index', 'appstack:docker:list', NULL, 1, 1, 1),
