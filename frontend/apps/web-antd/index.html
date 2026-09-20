@@ -14,19 +14,14 @@
     <!-- 由 vite 注入 VITE_APP_TITLE 变量，在 .env 文件内配置 -->
     <title>%VITE_APP_TITLE%</title>
     <link rel="icon" href="/favicon.ico" />
-    <script>
-      // 生产环境下注入百度统计
-      if (window._VBEN_ADMIN_PRO_APP_CONF_) {
-        var _hmt = _hmt || [];
-        (function () {
-          var hm = document.createElement('script');
-          hm.src =
-            'https://hm.baidu.com/hm.js?b38e689f40558f20a9a686d7f6f33edf';
-          var s = document.getElementsByTagName('script')[0];
-          s.parentNode.insertBefore(hm, s);
-        })();
-      }
-    </script>
+    <!--
+      图标离线化：内联项目用到的 Iconify 图标数据，并把图标 API 指向站内 /iconify/。
+      文件由 frontend/scripts/gen-iconify-offline.py 生成。
+      原因：@iconify/vue 默认在运行时访问 api.iconify.design / api.simplesvg.com /
+      api.unisvg.com，生产网络不可达，会让每次图标渲染都挂起到 TCP 超时。
+      必须是同步脚本且置于 <head>，以保证早于下面的应用模块执行。
+    -->
+    <script src="/iconify-preload.js"></script>
   </head>
   <body>
     <div id="app"></div>

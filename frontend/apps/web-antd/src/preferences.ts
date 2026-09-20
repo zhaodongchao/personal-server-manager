@@ -20,11 +20,19 @@ export const overridesPreferences = defineOverridesPreferences({
   // overrides
   app: {
     accessMode: 'backend',
+    // 站内默认头像。Vben 内置默认值指向 unpkg.com，该域名在生产网络不可达，
+    // 会让 <img> 一直挂起到 TCP 超时并阻塞页面的 load 事件，故改为本地资源。
+    defaultAvatar: '/avatar.svg',
     defaultHomePath: '/overview/monitor',
     enableRefreshToken: false,
     name: import.meta.env.VITE_APP_TITLE,
   },
   copyright: appCopyrightPreferences,
+  // 站点 logo 同样改走站内资源（原默认值为 https://unpkg.com/...）；
+  // 尺寸与默认保持一致的方形比例，fit/logoMode 沿用内置配置。
+  logo: {
+    source: '/logo.svg',
+  },
 });
 
 export const preferencesExtension =

@@ -16,6 +16,34 @@ interface IconifyResponse {
 
 const PENDING_REQUESTS: Recordable<Promise<string[]>> = {};
 
+/** 站内图标集清单缓存（多个图标选择器共享，全程只请求一次） */
+let COLLECTIONS_CACHE: null | Recordable<IconifyResponse> = null;
+
+/**
+ * 读取站内图标集清单。
+ *
+ * 数据由 frontend/scripts/gen-iconify-offline.py 生成，形如
+ * `{ [prefix]: { prefix, total, title, uncategorized } }`。
+ * 取代原先对 https://api.iconify.design/collection 的外网请求：该域名在生产网络
+ * 不可达，会导致每次打开图标选择器都挂起 10s 后抛错、列表为空。
+ * @param signal 中止信号
+ */
+async function loadCollections(
+  signal?: AbortSignal,
+): Promise<Recordable<IconifyResponse>> {
+  if (COLLECTIONS_CACHE) {
+    return COLLECTIONS_CACHE;
+  }
+  // 注意：先赋给局部变量再回填缓存。把 `any`（res.json() 的返回类型）直接
+  // 赋给可空变量会重置 TS 的控制流收窄，导致末尾 return 仍被判定为可能为 null。
+  const data: Recordable<IconifyResponse> = await fetch(
+    '/iconify/collections.json',
+    { signal },
+  ).then((res) => res.json());
+  COLLECTIONS_CACHE = data;
+  return data;
+}
+
 /**
  * 通过Iconify接口获取图标集数据。
  * 同一时间多个图标选择器同时请求同一个图标集时，实际上只会发起一次请求（所有请求共享同一份结果）。
@@ -34,12 +62,15 @@ export async function fetchIconsData(prefix: string): Promise<string[]> {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 1000 * 10);
-      const response: IconifyResponse = await fetch(
-        `https://api.iconify.design/collection?prefix=${prefix}`,
-        { signal: controller.signal },
-      ).then((res) => res.json());
+      const collections = await loadCollections(controller.signal);
       clearTimeout(timeoutId);
-      const list = response.uncategorized || [];
+      const response = collections[prefix];
+      if (!response) {
+        ICONS_MAP[prefix] = [];
+        return ICONS_MAP[prefix];
+      }
+      // 注意：站内清单里 uncategorized 是共享引用，这里必须复制后再 push
+      const list = [...(response.uncategorized || [])];
       if (response.categories) {
         for (const category in response.categories) {
           list.push(...(response.categories[category] || []));
