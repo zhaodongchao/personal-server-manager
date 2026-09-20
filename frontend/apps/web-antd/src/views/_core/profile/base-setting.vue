@@ -1,65 +1,86 @@
 <script setup lang="ts">
-import type { BasicOption } from '@vben/types';
+import type { Recordable, UserInfo } from '@vben/types';
 
 import type { VbenFormSchema } from '#/adapter/form';
 
 import { computed, onMounted, ref } from 'vue';
 
-import { ProfileBaseSetting } from '@vben/common-ui';
+import { ProfileBaseSetting, z } from '@vben/common-ui';
+import { useUserStore } from '@vben/stores';
 
-import { getUserInfoApi } from '#/api';
+import { message } from 'ant-design-vue';
+
+import { getUserInfoApi, updateUserProfileApi } from '#/api';
+
+const userStore = useUserStore();
 
 const profileBaseSettingRef = ref();
 
-const MOCK_ROLES_OPTIONS: BasicOption[] = [
+const formSchema = computed((): VbenFormSchema[] => [
   {
-    label: '管理员',
-    value: 'super',
+    fieldName: 'realName',
+    component: 'Input',
+    label: '姓名',
+    rules: 'required',
   },
   {
-    label: '用户',
-    value: 'user',
+    fieldName: 'username',
+    component: 'Input',
+    componentProps: {
+      disabled: true,
+    },
+    label: '用户名',
   },
   {
-    label: '测试',
-    value: 'test',
+    fieldName: 'email',
+    component: 'Input',
+    label: '邮箱',
+    rules: z.string().email({ message: '邮箱格式不正确' }).or(z.literal('')),
   },
-];
-
-const formSchema = computed((): VbenFormSchema[] => {
-  return [
-    {
-      fieldName: 'realName',
-      component: 'Input',
-      label: '姓名',
-    },
-    {
-      fieldName: 'username',
-      component: 'Input',
-      label: '用户名',
-    },
-    {
-      fieldName: 'roles',
-      component: 'Select',
-      componentProps: {
-        mode: 'tags',
-        options: MOCK_ROLES_OPTIONS,
-      },
-      label: '角色',
-    },
-    {
-      fieldName: 'introduction',
-      component: 'Textarea',
-      label: '个人简介',
-    },
-  ];
-});
+  {
+    fieldName: 'phone',
+    component: 'Input',
+    label: '手机号',
+  },
+  {
+    fieldName: 'desc',
+    component: 'Textarea',
+    label: '个人简介',
+  },
+]);
 
 onMounted(async () => {
   const data = await getUserInfoApi();
-  profileBaseSettingRef.value.getFormApi().setValues(data);
+  setFormValues(data);
 });
+
+function setFormValues(data: Recordable<any>) {
+  profileBaseSettingRef.value?.getFormApi()?.setValues({
+    realName: data.realName,
+    username: data.username,
+    email: data.email,
+    phone: data.phone,
+    desc: data.desc,
+  });
+}
+
+async function handleSubmit(values: Recordable<any>) {
+  await updateUserProfileApi({
+    realName: values.realName,
+    email: values.email,
+    phone: values.phone,
+    desc: values.desc,
+  });
+  // 刷新本地用户信息，同步侧边栏昵称与头像
+  const userInfo = (await getUserInfoApi()) as UserInfo;
+  userStore.setUserInfo(userInfo);
+  message.success('基本资料已更新');
+}
 </script>
 <template>
-  <ProfileBaseSetting ref="profileBaseSettingRef" :form-schema="formSchema" />
+  <ProfileBaseSetting
+    ref="profileBaseSettingRef"
+    :form-schema="formSchema"
+    @submit="handleSubmit"
+  />
 </template>

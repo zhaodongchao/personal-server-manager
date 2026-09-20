@@ -54,6 +54,7 @@ CREATE TABLE sys_user (
   email         VARCHAR(100)          DEFAULT NULL,
   phone         VARCHAR(20)           DEFAULT NULL,
   avatar        VARCHAR(255)          DEFAULT NULL,
+  `desc`        VARCHAR(255)          DEFAULT NULL COMMENT '个人简介',
   status        TINYINT      NOT NULL DEFAULT 1 COMMENT '1启用 0停用',
   last_login_at DATETIME               DEFAULT NULL,
   last_login_ip VARCHAR(50)            DEFAULT NULL,
