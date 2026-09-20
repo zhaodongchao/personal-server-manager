@@ -47,6 +47,11 @@ function setupCommonGuard(router: Router) {
  */
 function setupAccessGuard(router: Router) {
   router.beforeEach(async (to, from) => {
+    // 兼容旧版工作台路由：V4 菜单重构后 /dashboard 已迁移到 /overview/workspace
+    if (to.path === '/dashboard' || to.path === '/dashboard/index') {
+      return { path: '/overview/workspace', replace: true };
+    }
+
     const accessStore = useAccessStore();
     const userStore = useUserStore();
     const authStore = useAuthStore();
