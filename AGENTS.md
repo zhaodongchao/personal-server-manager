@@ -86,18 +86,32 @@
 
 ### 后端目录（`backend/`）
 
-Maven 多模块，各模块均采用 `controller / service / mapper / entity / dto / config / security(或 ws/audit)` 包结构：
+Maven 多模块工程，按**基础层 → 系统层 → 业务层 → 启动层**四层归类。公共能力（`common`/`base` 职责）分别由 `server-common`、`server-framework` 承担，系统管理为 `server-system`，其余业务能力（`business` 职责）由 `server-monitor`/`server-file`/`server-ops`/`server-appstack` 承载，由 `server-boot` 统一装配启动。模块依赖单向：业务/系统模块依赖 `server-framework`/`server-common`，禁止反向依赖形成环。
 
-| 模块 | 职责 |
-| --- | --- |
-| `server-common` | 公共模型与工具：统一响应体 `R<T>`、`PageQuery`/`PageResult`、`BaseEntity`、`ErrorCode`、`ServiceException`、常量、`@Audit` 注解 |
-| `server-framework` | 技术框架集成：Sa-Token 认证配置、全局异常处理 `GlobalExceptionHandler`、MyBatis-Plus 配置、审计切面、命令执行 `CommandExecutor`、Mongo 基类、SPA 前端转发 |
-| `server-system` | 系统管理：用户/角色/菜单/字典/配置/登录鉴权/审计日志/用户偏好 |
-| `server-monitor` | 服务器监控：指标采集（OSHI）、监控接口、WebSocket 实时推送 |
-| `server-file` | 文件管理：文件列表/目录操作、回收站、根目录白名单安全校验 |
-| `server-ops` | 运维管理：进程、服务、计划任务（cron）、防火墙 |
-| `server-appstack` | 应用栈管理：Docker 容器/镜像、Nginx 网站、MySQL 数据库 |
-| `server-boot` | 启动装配模块：汇总所有业务模块、Flyway 迁移、配置与打包（产物名 `serverpanel`） |
+```
+backend
+├── server-common/      # ① 基础层 · 公共模型与工具（com.serverpanel.common）
+├── server-framework/   # ② 基础层 · 技术框架集成（com.serverpanel.framework）
+├── server-system/      # ③ 系统层 · 系统管理（com.serverpanel.system）
+├── server-monitor/     # ④ 业务层 · 服务器监控（com.serverpanel.monitor）
+├── server-file/        # ④ 业务层 · 文件管理（com.serverpanel.file）
+├── server-ops/         # ④ 业务层 · 运维管理（com.serverpanel.ops）
+├── server-appstack/    # ④ 业务层 · 应用栈管理（com.serverpanel.appstack）
+└── server-boot/        # ⑤ 启动层 · 装配启动与打包（com.serverpanel）
+```
+
+各模块根包与职责、层归属如下：
+
+| 分层 | 模块（根包完整路径） | 职责 |
+| --- | --- | --- |
+| ① 基础层 | `backend/server-common/src/main/java/com/serverpanel/common/` | 公共模型与工具：统一响应体 `R<T>`、`PageQuery`/`PageResult`、`BaseEntity`、`ErrorCode`、`ServiceException`、常量、`@Audit` 注解 |
+| ② 基础层 | `backend/server-framework/src/main/java/com/serverpanel/framework/` | 技术框架集成：Sa-Token 认证配置、全局异常处理 `GlobalExceptionHandler`、MyBatis-Plus 配置、审计切面、命令执行 `CommandExecutor`、Mongo 基类、SPA 前端转发 |
+| ③ 系统层 | `backend/server-system/src/main/java/com/serverpanel/system/` | 系统管理：用户/角色/菜单/字典/配置/登录鉴权/审计日志/用户偏好 |
+| ④ 业务层 | `backend/server-monitor/src/main/java/com/serverpanel/monitor/` | 服务器监控：指标采集（OSHI）、监控接口、WebSocket 实时推送 |
+| ④ 业务层 | `backend/server-file/src/main/java/com/serverpanel/file/` | 文件管理：文件列表/目录操作、回收站、根目录白名单安全校验（`security/PathGuard`） |
+| ④ 业务层 | `backend/server-ops/src/main/java/com/serverpanel/ops/` | 运维管理：进程、服务、计划任务（cron）、防火墙 |
+| ④ 业务层 | `backend/server-appstack/src/main/java/com/serverpanel/appstack/` | 应用栈管理：Docker 容器/镜像、Nginx 网站、MySQL 数据库 |
+| ⑤ 启动层 | `backend/server-boot/src/main/java/com/serverpanel/` | 启动装配模块：汇总所有业务模块、Flyway 迁移、配置与打包（产物名 `serverpanel`，含 `resources/static` 前端资源与 `db/migration` 迁移脚本） |
 
 分层职责约定：`controller` 仅请求接入与参数校验；`service` 承载业务逻辑与事务；`mapper` 仅数据库交互；`dto` 承载入参（`*Body`）与出参（`*VO`）；`entity` 映射数据表；`config` 存放配置类；特殊子包如 `security`（权限）、`ws`（WebSocket）、`audit`（审计）按需拆分。
 
