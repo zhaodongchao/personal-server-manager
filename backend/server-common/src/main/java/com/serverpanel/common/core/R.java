@@ -1,10 +1,11 @@
 package com.serverpanel.common.core;
 
-import com.serverpanel.common.exception.ErrorCode;
-import lombok.Data;
-
 import java.io.Serial;
 import java.io.Serializable;
+
+import com.serverpanel.common.exception.ErrorCode;
+
+import lombok.Data;
 
 /**
  * 统一响应包装。
