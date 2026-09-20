@@ -1,5 +1,6 @@
 package com.serverpanel.system.entity;
 
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.serverpanel.common.mybatis.BaseEntity;
 import lombok.Data;
@@ -28,7 +29,8 @@ public class SysUser extends BaseEntity {
 
     private String avatar;
 
-    /** 个人简介 */
+    /** 个人简介（desc 为 MySQL 保留字，须加反引号） */
+    @TableField("`desc`")
     private String desc;
 
     /** 1 启用 0 停用 */
