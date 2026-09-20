@@ -53,6 +53,14 @@ const debouncedSave = useDebounceFn(async () => {
 }, SAVE_DEBOUNCE_MS);
 
 /**
+ * 立即保存当前完整偏好配置（供偏好设置抽屉手动「保存」按钮调用）。
+ * 失败时向上抛出，由调用方负责结果提示。
+ */
+export async function savePreferencesNow(): Promise<void> {
+  await saveUserPreferenceApi(currentSnapshot());
+}
+
+/**
  * 初始化偏好设置云同步（幂等）
  *
  * 拉取云端偏好 → 应用 → 建立基线 → 监听变更防抖保存。

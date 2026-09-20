@@ -9,6 +9,8 @@ interface ComponentsState {
 
 interface MessageState {
   copyPreferencesSuccess?: (title: string, content?: string) => void;
+  /** 保存偏好设置到后端（由应用层注册，负责请求与结果提示） */
+  savePreferences?: () => Promise<void>;
 }
 
 export interface IGlobalSharedState {
@@ -23,9 +25,13 @@ class GlobalShareState {
   /**
    * 定义框架内部各个场景的消息提示
    */
-  public defineMessage({ copyPreferencesSuccess }: MessageState) {
+  public defineMessage({
+    copyPreferencesSuccess,
+    savePreferences,
+  }: MessageState) {
     this.#message = {
       copyPreferencesSuccess,
+      savePreferences,
     };
   }
 
