@@ -518,7 +518,7 @@ public class NetworkCollector {
             DockerClient docker = dockerClientProvider.client();
             List<NetworkInfo.DockerNetwork> list = new ArrayList<>();
             for (Network net : docker.listNetworksCmd().exec()) {
-                list.add(toDockerNetwork(net));
+                list.add(toDockerNetwork(detailOf(docker, net)));
             }
             list.sort(Comparator.comparing(
                     (NetworkInfo.DockerNetwork n) -> n.getName() == null ? "" : n.getName()));
@@ -544,6 +544,28 @@ public class NetworkCollector {
         return map;
     }
 
+    /**
+     * 取网络详情：Docker 的 list 接口不返回容器端点（Containers 为空），
+     * 必须逐个 inspect 才能拿到接入的容器；inspect 失败时回退 list 结果。
+     *
+     * @param docker Docker 客户端
+     * @param net    list 接口返回的网络
+     * @return 含容器端点的网络详情；inspect 不可用时返回原对象
+     */
+    private Network detailOf(DockerClient docker, Network net) {
+        String id = net.getId();
+        if (id == null || id.isEmpty()) {
+            return net;
+        }
+        try {
+            Network detail = docker.inspectNetworkCmd().withNetworkId(id).exec();
+            return detail == null ? net : detail;
+        } catch (Exception e) {
+            log.debug("inspect Docker 网络 {} 失败，回退 list 结果：{}", id, e.getMessage());
+            return net;
+        }
+    }
+
     /** docker-java Network 模型 → 展示模型 */
     private NetworkInfo.DockerNetwork toDockerNetwork(Network net) {
         NetworkInfo.DockerNetwork vo = new NetworkInfo.DockerNetwork();
@@ -557,6 +579,9 @@ public class NetworkCollector {
         vo.setIpv6Enabled(Boolean.TRUE.equals(net.getEnableIPv6()));
         vo.setCreatedAt(net.getCreated() == null ? 0L : net.getCreated().getTime());
         vo.setBridgeName(bridgeNameOf(net, fullId));
+        // host / none 等网络没有 IPAM 配置，先落空串，有配置时再覆盖，保证契约稳定
+        vo.setSubnet("");
+        vo.setGateway("");
 
         Network.Ipam ipam = net.getIpam();
         if (ipam != null && ipam.getConfig() != null) {
