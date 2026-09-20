@@ -7,6 +7,7 @@ import com.serverpanel.system.dto.auth.PasswordBody;
 import com.serverpanel.system.dto.auth.PreferencesBody;
 import com.serverpanel.system.dto.auth.RouteVO;
 import com.serverpanel.system.dto.auth.UserInfoVO;
+import com.serverpanel.system.dto.auth.UserProfileBody;
 import com.serverpanel.system.entity.mongo.UserPreferenceDocument;
 import com.serverpanel.system.service.AuthService;
 import com.serverpanel.system.service.PermissionService;
@@ -45,6 +46,13 @@ public class AccountController {
     @PutMapping("/user/password")
     public R<Void> changePassword(@Valid @RequestBody PasswordBody body) {
         authService.changePassword(body);
+        return R.ok();
+    }
+
+    /** 更新当前用户基本资料（个人中心） */
+    @PutMapping("/user/profile")
+    public R<Void> updateProfile(@Valid @RequestBody UserProfileBody body) {
+        authService.updateProfile(body);
         return R.ok();
     }
 

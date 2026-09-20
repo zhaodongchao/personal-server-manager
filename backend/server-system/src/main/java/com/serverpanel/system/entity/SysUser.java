@@ -28,6 +28,9 @@ public class SysUser extends BaseEntity {
 
     private String avatar;
 
+    /** 个人简介 */
+    private String desc;
+
     /** 1 启用 0 停用 */
     private Integer status;
 

@@ -9,6 +9,7 @@ import com.serverpanel.framework.security.LoginHelper;
 import com.serverpanel.system.dto.auth.LoginBody;
 import com.serverpanel.system.dto.auth.PasswordBody;
 import com.serverpanel.system.dto.auth.UserInfoVO;
+import com.serverpanel.system.dto.auth.UserProfileBody;
 import com.serverpanel.system.entity.SysUser;
 import com.serverpanel.system.mapper.SysLoginLogMapper;
 import com.serverpanel.system.mapper.SysUserMapper;
@@ -109,10 +110,39 @@ public class AuthService {
         vo.setUsername(user.getUsername());
         vo.setRealName(user.getNickname());
         vo.setAvatar(user.getAvatar() == null ? "" : user.getAvatar());
-        vo.setDesc("");
+        vo.setDesc(user.getDesc() == null ? "" : user.getDesc());
+        vo.setEmail(user.getEmail());
+        vo.setPhone(user.getPhone());
         vo.setHomePath("/");
         vo.setRoles(permissionService.getUserRoleKeys(userId));
         return vo;
+    }
+
+    /** 更新当前用户基本资料（个人中心） */
+    public void updateProfile(UserProfileBody body) {
+        long userId = LoginHelper.getUserId();
+        SysUser user = userMapper.selectById(userId);
+        if (user == null) {
+            throw new ServiceException(ErrorCode.AUTH_USER_NOT_FOUND);
+        }
+        if (body.getRealName() != null) {
+            user.setNickname(body.getRealName());
+        }
+        if (body.getEmail() != null) {
+            user.setEmail(body.getEmail());
+        }
+        if (body.getPhone() != null) {
+            user.setPhone(body.getPhone());
+        }
+        if (body.getAvatar() != null) {
+            user.setAvatar(body.getAvatar());
+        }
+        if (body.getDesc() != null) {
+            user.setDesc(body.getDesc());
+        }
+        userMapper.updateById(user);
+        // 同步会话中的昵称，供后续接口直接读取
+        StpUtil.getSession().set(LoginHelper.KEY_NICKNAME, user.getNickname());
     }
 
     /** 修改当前用户密码 */

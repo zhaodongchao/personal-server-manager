@@ -20,6 +20,10 @@ public class UserInfoVO {
 
     private String avatar;
 
+    private String email;
+
+    private String phone;
+
     private String homePath;
 
     /** 角色 key 列表 */
