@@ -66,6 +66,8 @@ import { IconifyIcon } from '@vben/icons';
 import { $t } from '@vben/locales';
 import { isEmpty } from '@vben/utils';
 
+import { savePreferencesNow } from '#/utils/preference-sync';
+
 import { message, Modal, notification } from 'ant-design-vue';
 
 type AdapterUploadProps = UploadProps & {
@@ -737,6 +739,22 @@ async function initComponentAdapter() {
         message: title,
         placement: 'bottomRight',
       });
+    },
+    // 保存偏好设置：立即持久化当前完整配置，并给出结果提示
+    savePreferences: async () => {
+      try {
+        await savePreferencesNow();
+        notification.success({
+          message: $t('preferences.savePreferencesSuccess'),
+          placement: 'bottomRight',
+        });
+      } catch (error) {
+        console.warn('[preference-save] save failed:', error);
+        notification.error({
+          message: $t('preferences.savePreferencesFailed'),
+          placement: 'bottomRight',
+        });
+      }
     },
   });
 }

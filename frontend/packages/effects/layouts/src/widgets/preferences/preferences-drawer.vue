@@ -17,7 +17,7 @@ import type { SegmentedItem } from '@vben-core/shadcn-ui';
 
 import { computed, ref } from 'vue';
 
-import { Copy, Pin, PinOff, RotateCw } from '@vben/icons';
+import { Check, Copy, Pin, PinOff, RotateCw } from '@vben/icons';
 import { $t, loadLocaleMessages } from '@vben/locales';
 import {
   clearCache,
@@ -305,6 +305,14 @@ async function handleCopy() {
   );
 }
 
+async function handleSave() {
+  if (!message.savePreferences) {
+    console.warn('[preference-save] savePreferences handler is not registered');
+    return;
+  }
+  await message.savePreferences();
+}
+
 async function handleClearCache() {
   await resetPreferences();
   await clearCache();
@@ -588,6 +596,16 @@ function handleCustomPreferencesUpdate(updates: CustomPreferencesRecord) {
         >
           <Copy class="mr-2 size-3" />
           {{ $t('preferences.copyPreferences') }}
+        </VbenButton>
+        <VbenButton
+          :disabled="!mergedDiffPreference"
+          class="mx-4 w-full"
+          size="sm"
+          variant="default"
+          @click="handleSave"
+        >
+          <Check class="mr-2 size-3" />
+          {{ $t('preferences.savePreferences') }}
         </VbenButton>
         <VbenButton
           :disabled="!mergedDiffPreference"
