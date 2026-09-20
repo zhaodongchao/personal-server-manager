@@ -1,14 +1,6 @@
 package com.serverpanel.framework.handler;
 
-import cn.dev33.satoken.exception.NotLoginException;
-import cn.dev33.satoken.exception.NotPermissionException;
-import cn.dev33.satoken.exception.NotRoleException;
-import cn.dev33.satoken.exception.NotSafeException;
-import com.serverpanel.common.core.R;
-import com.serverpanel.common.exception.ErrorCode;
-import com.serverpanel.common.exception.ServiceException;
 import jakarta.servlet.http.HttpServletRequest;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.BindException;
@@ -22,6 +14,16 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+
+import com.serverpanel.common.core.R;
+import com.serverpanel.common.exception.ErrorCode;
+import com.serverpanel.common.exception.ServiceException;
+
+import cn.dev33.satoken.exception.NotLoginException;
+import cn.dev33.satoken.exception.NotPermissionException;
+import cn.dev33.satoken.exception.NotRoleException;
+import cn.dev33.satoken.exception.NotSafeException;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * 全局异常处理：统一转换为 R 响应（HTTP 状态保持 200，业务码承载语义）。
@@ -58,7 +60,9 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public R<Void> handleValid(MethodArgumentNotValidException e) {
         String msg = e.getBindingResult().getFieldErrors().stream()
-            .findFirst().map(FieldError::getDefaultMessage).orElse("参数校验失败");
+                .findFirst()
+                .map(FieldError::getDefaultMessage)
+                .orElse("参数校验失败");
         return R.fail(ErrorCode.BAD_REQUEST.getCode(), msg);
     }
 
@@ -66,13 +70,18 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BindException.class)
     public R<Void> handleBind(BindException e) {
         String msg = e.getFieldErrors().stream()
-            .findFirst().map(FieldError::getDefaultMessage).orElse("参数绑定失败");
+                .findFirst()
+                .map(FieldError::getDefaultMessage)
+                .orElse("参数绑定失败");
         return R.fail(ErrorCode.BAD_REQUEST.getCode(), msg);
     }
 
     /** 缺少必填参数 / 类型不匹配 */
-    @ExceptionHandler({MissingServletRequestParameterException.class,
-        MethodArgumentTypeMismatchException.class, HttpMessageNotReadableException.class})
+    @ExceptionHandler({
+        MissingServletRequestParameterException.class,
+        MethodArgumentTypeMismatchException.class,
+        HttpMessageNotReadableException.class
+    })
     public R<Void> handleBadRequest(Exception e) {
         return R.fail(ErrorCode.BAD_REQUEST);
     }

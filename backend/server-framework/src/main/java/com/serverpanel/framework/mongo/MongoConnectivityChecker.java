@@ -1,12 +1,13 @@
 package com.serverpanel.framework.mongo;
 
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.stereotype.Component;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * MongoDB 启动连通性检查。
@@ -27,8 +28,7 @@ public class MongoConnectivityChecker implements ApplicationRunner {
             Document result = mongoTemplate.executeCommand(new Document("ping", 1));
             log.info("MongoDB connectivity check OK (ok={})", result.get("ok"));
         } catch (Exception e) {
-            log.warn("MongoDB connectivity check FAILED: {} — 偏好设置等 MongoDB 功能暂不可用",
-                e.getMessage());
+            log.warn("MongoDB connectivity check FAILED: {} — 偏好设置等 MongoDB 功能暂不可用", e.getMessage());
         }
     }
 }

@@ -28,6 +28,8 @@ import lombok.extern.slf4j.Slf4j;
  *   <li>命令名（argv[0]）必须在白名单内，白名单 = 内置表 + 配置扩展项；</li>
  *   <li>单命令超时（默认 30s）后 destroyForcibly；</li>
  *   <li>stdout/stderr 超过上限（默认 2MB）截断，防止内存打爆。</li>
+ *   <li>需 root 权限的命令走 {@link #execSudo(String...)}，以
+ *       {@code sudo -n -- <cmd> ...} 方式执行（面板进程需要免密 sudo 权限）。</li>
  * </ul>
  */
 @Slf4j
@@ -52,7 +54,14 @@ public class CommandExecutor {
             "mysqladmin",
             "pvs",
             "vgs",
-            "lvs");
+            "lvs",
+            "pvdisplay",
+            "vgdisplay",
+            "lvdisplay",
+            "lsblk",
+            "fdisk",
+            "df",
+            "findmnt");
 
     private final long timeoutSeconds;
 
@@ -91,7 +100,18 @@ public class CommandExecutor {
      * @throws ServiceException 命令不在白名单 / 启动失败
      */
     public ExecResult exec(String... argv) {
-        return execInternal(Map.of(), argv);
+        return execInternal(false, Map.of(), argv);
+    }
+
+    /**
+     * 以 sudo（免密非交互）执行白名单命令。
+     *
+     * <p>实际进程为 {@code sudo -n -- <argv...>}：<code>--</code> 分隔符阻断 sudo 选项注入，
+     * 业务命令与参数原样透传；白名单校验仍针对底层命令 argv[0]。面板进程需具备免密 sudo 权限，
+     * 否则 sudo 以非零码退出，由调用方降级处理。
+     */
+    public ExecResult execSudo(String... argv) {
+        return execInternal(true, Map.of(), argv);
     }
 
     /**
@@ -101,10 +121,10 @@ public class CommandExecutor {
      * 安全约束与 {@link #exec(String...)} 完全一致。
      */
     public ExecResult exec(Map<String, String> env, String... argv) {
-        return execInternal(env, argv);
+        return execInternal(false, env, argv);
     }
 
-    private ExecResult execInternal(Map<String, String> env, String... argv) {
+    private ExecResult execInternal(boolean sudo, Map<String, String> env, String... argv) {
         if (argv == null || argv.length == 0) {
             throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "命令不能为空");
         }
@@ -115,7 +135,15 @@ public class CommandExecutor {
         long start = System.currentTimeMillis();
         Process process = null;
         try {
-            ProcessBuilder builder = new ProcessBuilder(argv);
+            String[] cmd = argv;
+            if (sudo) {
+                cmd = new String[argv.length + 3];
+                cmd[0] = "sudo";
+                cmd[1] = "-n";
+                cmd[2] = "--";
+                System.arraycopy(argv, 0, cmd, 3, argv.length);
+            }
+            ProcessBuilder builder = new ProcessBuilder(cmd);
             if (env != null && !env.isEmpty()) {
                 builder.environment().putAll(env);
             }

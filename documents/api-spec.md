@@ -285,11 +285,16 @@ SysConfig 字段：`configName`、`configKey`、`configValue`、`configType`（Y
 | ---- | ---- | ---- |
 | `hostname` / `os` / `kernel` / `cpuModel` | string | 主机信息 |
 | `cpuPhysicalCores` / `cpuLogicalCores` | number | 核数 |
-| `disks[]` | array | 逻辑文件系统 `{mount, fsType, totalBytes, usableBytes, usage}` |
+| `disks[]` | array | 逻辑文件系统（真实挂载点）`{mount, fsType, totalBytes, usableBytes, usage}`；伪文件系统（proc/sysfs 等）不返回 |
 | `physicalDisks[]` | array | 物理磁盘 `{name, model, serial, sizeBytes, partitions[]{name,mount,sizeBytes,type}}` |
 | `lvm` | object | LVM 信息 `{physicalVolumes[]{name,vg,sizeBytes,freeBytes}, volumeGroups[]{name,pvCount,lvCount,sizeBytes,freeBytes}, logicalVolumes[]{name,vg,sizeBytes}}`；非 LVM 环境各列表为空 |
 | `interfaces[]` | array | `{name, ipv4, speed}` |
 | `latest` | MetricFrame | 最新一帧 |
+
+> 上述磁盘/LVM 数据经 `sudo -n -- ...` 执行系统命令采集：
+> `lsblk -J -b`（物理磁盘+分区）、`findmnt -J -b`（挂载点/文件系统树）、
+> `pvs/vgs/lvs --reportformat json`（PV/VG/LV）。命令受 `CommandExecutor` 白名单约束，
+> 面板进程需具备免密 sudo 权限；sudo 或对应工具不可用时会回退 OSHI（LVM 无回退，置空）。
 
 MetricFrame（`/history` 返回数组，WebSocket 推送同构）：
 

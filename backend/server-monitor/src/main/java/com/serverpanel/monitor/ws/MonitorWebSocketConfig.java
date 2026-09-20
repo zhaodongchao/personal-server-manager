@@ -1,7 +1,6 @@
 package com.serverpanel.monitor.ws;
 
-import cn.dev33.satoken.stp.StpUtil;
-import lombok.extern.slf4j.Slf4j;
+import java.util.Map;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.ServerHttpRequest;
@@ -13,7 +12,8 @@ import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
 import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
 import org.springframework.web.socket.server.HandshakeInterceptor;
 
-import java.util.Map;
+import cn.dev33.satoken.stp.StpUtil;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * WebSocket 配置：/ws/monitor（query 参数 token 认证）。
@@ -35,16 +35,18 @@ public class MonitorWebSocketConfig implements WebSocketConfigurer {
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         registry.addHandler(monitorWebSocketHandler, "/ws/monitor")
-            .addInterceptors(new TokenHandshakeInterceptor())
-            .setAllowedOrigins("*");
+                .addInterceptors(new TokenHandshakeInterceptor())
+                .setAllowedOrigins("*");
     }
 
     /** 握手 token 校验 */
     static class TokenHandshakeInterceptor implements HandshakeInterceptor {
 
         @Override
-        public boolean beforeHandshake(@NonNull ServerHttpRequest request,
-                @NonNull ServerHttpResponse response, @NonNull WebSocketHandler wsHandler,
+        public boolean beforeHandshake(
+                @NonNull ServerHttpRequest request,
+                @NonNull ServerHttpResponse response,
+                @NonNull WebSocketHandler wsHandler,
                 @NonNull Map<String, Object> attributes) {
             String token = null;
             String query = request.getURI().getQuery();
@@ -68,8 +70,10 @@ public class MonitorWebSocketConfig implements WebSocketConfigurer {
         }
 
         @Override
-        public void afterHandshake(@NonNull ServerHttpRequest request,
-                @NonNull ServerHttpResponse response, @NonNull WebSocketHandler wsHandler,
+        public void afterHandshake(
+                @NonNull ServerHttpRequest request,
+                @NonNull ServerHttpResponse response,
+                @NonNull WebSocketHandler wsHandler,
                 Exception exception) {
             // no-op
         }
