@@ -18,5 +18,10 @@
       <groupId>com.serverpanel</groupId>
       <artifactId>server-framework</artifactId>
     </dependency>
+    <!-- IP 归属地离线查询（工作台-访问来源） -->
+    <dependency>
+      <groupId>org.lionsoul</groupId>
+      <artifactId>ip2region</artifactId>
+    </dependency>
   </dependencies>
 </project>

@@ -244,8 +244,8 @@ INSERT INTO sys_user_role (user_id, role_id) VALUES (1, 1);
 
 -- 菜单（与前端页面清单一一对应）
 INSERT INTO sys_menu (id, parent_id, menu_name, menu_type, route_path, component, perms, icon, sort, visible, status) VALUES
--- 仪表盘
-(100, 0,   '仪表盘', 'C', '/dashboard', '/dashboard/index', 'dashboard:view', 'lucide:activity', 0, 1, 1),
+-- 工作台
+(100, 0,   '工作台', 'C', '/dashboard', '/dashboard/index', 'dashboard:view', 'lucide:activity', 0, 1, 1),
 -- 系统管理
 (200, 0,   '系统管理', 'M', '/system', NULL, NULL, 'lucide:settings', 1, 1, 1),
 (201, 200, '用户管理', 'C', '/system/user', '/system/user/index', 'system:user:list', NULL, 1, 1, 1),
