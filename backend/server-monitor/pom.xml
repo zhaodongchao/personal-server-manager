@@ -23,5 +23,14 @@
       <groupId>com.github.oshi</groupId>
       <artifactId>oshi-core</artifactId>
     </dependency>
+    <!-- Docker 网络信息采集：经 server-framework 的 DockerClientProvider 取客户端 -->
+    <dependency>
+      <groupId>com.github.docker-java</groupId>
+      <artifactId>docker-java-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.github.docker-java</groupId>
+      <artifactId>docker-java-transport-httpclient5</artifactId>
+    </dependency>
   </dependencies>
 </project>

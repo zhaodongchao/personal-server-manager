@@ -3,7 +3,6 @@ package com.serverpanel.monitor.service;
 import java.io.File;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -12,7 +11,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -22,6 +20,7 @@ import com.serverpanel.framework.command.CommandExecutor;
 import com.serverpanel.framework.command.ExecResult;
 import com.serverpanel.monitor.dto.MetricFrame;
 import com.serverpanel.monitor.dto.MonitorOverview;
+import com.serverpanel.monitor.dto.NetworkInfo;
 import com.serverpanel.monitor.entity.MonMetricHour;
 import com.serverpanel.monitor.mapper.MonMetricHourMapper;
 import com.serverpanel.monitor.ws.MonitorWebSocketHandler;
@@ -95,15 +94,13 @@ public class MetricsCollector {
     private final CommandExecutor commandExecutor;
 
     /**
-     * 宿主机根路径前缀（容器部署用）：将宿主机 / 递归挂载进容器（如 docker run -v /:/host）后，
-     * 通过该前缀读取宿主机的 /proc/mounts 与 /sys 块设备信息，解决容器内看不到
-     * 宿主机挂载表与 LVM 的问题。裸机 / systemd 部署留空。
+     * 宿主机文件访问（容器部署时按宿主机视角读取 /proc 与 /sys）：
+     * 磁盘 / 挂载表 / LVM 的 sysroot 逻辑统一委托给它，避免多处重复解析。
      */
-    @Value("${serverpanel.monitor.host-sysroot:}")
-    private String hostSysroot;
+    private final HostFileAccess hostFs;
 
-    /** sysroot 解析结果缓存（见 {@link #sysroot()}） */
-    private volatile String sysrootCache;
+    /** 网络信息采集器（主机网卡明细 + Docker 虚拟网络） */
+    private final NetworkCollector networkCollector;
 
     /** 上一帧网络累计字节数与时间戳（速率差分） */
     private long prevNetIn;
@@ -115,6 +112,9 @@ public class MetricsCollector {
     private long[] prevCpuTicks;
 
     private volatile MetricFrame latestFrame;
+
+    /** 最新网络信息快照（主机网卡 + Docker 网络，与实时帧同频刷新） */
+    private volatile NetworkInfo latestNetwork;
 
     /** 采集 + 缓存 + 广播 */
     @Scheduled(fixedDelayString = "PT${serverpanel.monitor.interval-seconds:5}S", initialDelayString = "PT2S")
@@ -132,6 +132,13 @@ public class MetricsCollector {
             wsHandler.broadcast(frame);
         } catch (Exception e) {
             log.error("Metrics collection failed: {}", e.getMessage());
+        }
+
+        // 网络信息与实时帧同频刷新；独立 try：网络采集失败不影响指标帧与推送
+        try {
+            latestNetwork = networkCollector.collect();
+        } catch (Exception e) {
+            log.error("Network collection failed: {}", e.getMessage());
         }
     }
 
@@ -204,6 +211,12 @@ public class MetricsCollector {
         return frame == null ? snapshot() : frame;
     }
 
+    /** 最新网络信息快照（主机网卡明细 + Docker 虚拟网络；尚未采集时立即采集一次） */
+    public NetworkInfo network() {
+        NetworkInfo info = latestNetwork;
+        return info == null ? networkCollector.collect() : info;
+    }
+
     /** 系统静态信息概览 */
     public MonitorOverview overview() {
         HardwareAbstractionLayer hardware = systemInfo.getHardware();
@@ -240,19 +253,11 @@ public class MetricsCollector {
         // 将挂载点回填到分区 / Device Mapper / 逻辑卷，并补全容器内读不到的文件系统类型
         applyMounts(vo, mounts, lsblk.dmAlias);
 
-        List<MonitorOverview.NetInterface> interfaces = new ArrayList<>();
-        for (NetworkIF netif : hardware.getNetworkIFs()) {
-            if (netif.getName().startsWith("lo")) {
-                continue;
-            }
-            MonitorOverview.NetInterface item = new MonitorOverview.NetInterface();
-            item.setName(netif.getName());
-            item.setSpeed(netif.getSpeed());
-            String[] ipv4 = netif.getIPv4addr();
-            item.setIpv4(ipv4.length > 0 ? ipv4[0] : "");
-            interfaces.add(item);
-        }
-        vo.setInterfaces(interfaces);
+        // 网络明细复用采集器快照（与 /monitor/network 同构），避免每次概览都全量扫网卡
+        NetworkInfo network = network();
+        vo.setInterfaces(network.getInterfaces());
+        vo.setDockerNetworks(network.getDockerNetworks());
+        vo.setNetworkSummary(network.getSummary());
 
         vo.setLatest(latest());
         return vo;
@@ -390,55 +395,14 @@ public class MetricsCollector {
         return fsType == null || PSEUDO_FS.contains(fsType);
     }
 
-    /**
-     * 宿主机根前缀（解析结果缓存）：显式配置优先；未配置时探测常见宿主机挂载点
-     * （docker run -v /:/host 等），命中则按宿主机视角采集磁盘与文件系统。
-     */
+    /** 宿主机根前缀（委托 HostFileAccess，解析结果由其实例缓存） */
     private String sysroot() {
-        String cached = sysrootCache;
-        if (cached != null) {
-            return cached;
-        }
-        String sr = hostSysroot == null ? "" : hostSysroot.trim();
-        while (sr.endsWith("/")) {
-            sr = sr.substring(0, sr.length() - 1);
-        }
-        if (sr.isEmpty()) {
-            for (String candidate : new String[] {"/host", "/hostfs", "/mnt/host"}) {
-                if (java.nio.file.Files.exists(java.nio.file.Path.of(candidate, "proc", "mounts"))) {
-                    sr = candidate;
-                    log.info("探测到宿主机根挂载点 {}，磁盘 / 文件系统 / LVM 将按宿主机视角采集", sr);
-                    break;
-                }
-            }
-        }
-        sysrootCache = sr;
-        return sr;
+        return hostFs.sysroot();
     }
 
-    /**
-     * 读取宿主机文件：容器部署时优先读 sysroot 前缀路径，失败回退本机路径。
-     *
-     * @param relPath 以 / 开头的绝对路径（如 /proc/mounts、/sys/block/sda/device/model）
-     */
+    /** 读取宿主机文件（委托 HostFileAccess：优先 sysroot 前缀路径，失败回退本机） */
     private String readHostFile(String relPath) {
-        String sr = sysroot();
-        if (!sr.isEmpty()) {
-            try {
-                String content =
-                        java.nio.file.Files.readString(java.nio.file.Path.of(sr + relPath), StandardCharsets.UTF_8);
-                if (!content.isEmpty()) {
-                    return content;
-                }
-            } catch (Exception ignored) {
-                // 回退本机路径
-            }
-        }
-        try {
-            return java.nio.file.Files.readString(java.nio.file.Path.of(relPath), StandardCharsets.UTF_8);
-        } catch (Exception e) {
-            return "";
-        }
+        return hostFs.readFile(relPath);
     }
 
     /** 由挂载表构建文件系统列表：挂载点 / 源设备 / 文件系统类型 / 所属 LVM 卷组 / 容量与使用率 */

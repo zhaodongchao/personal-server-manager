@@ -4,12 +4,12 @@ import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.PullImageResultCallback;
 import com.github.dockerjava.api.model.Container;
 import com.github.dockerjava.api.model.Image;
-import com.github.dockerjava.core.DefaultDockerClientConfig;
-import com.github.dockerjava.core.DockerClientImpl;
 import com.serverpanel.appstack.dto.ContainerInfo;
 import com.serverpanel.appstack.dto.ImageInfo;
 import com.serverpanel.common.exception.ErrorCode;
 import com.serverpanel.common.exception.ServiceException;
+import com.serverpanel.framework.docker.DockerClientProvider;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -21,31 +21,18 @@ import java.util.function.Function;
 /**
  * Docker 容器/镜像管理（通过 docker-java 走 unix socket）。
  *
- * <p>客户端按需惰性创建：Docker 未安装时只影响本模块调用，
- * 不会拖垮面板启动。
+ * <p>客户端统一从 {@link DockerClientProvider} 获取（惰性创建）：
+ * Docker 未安装时只影响本模块调用，不会拖垮面板启动。
  */
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class DockerService {
 
-    private static final String DOCKER_HOST =
-        System.getenv().getOrDefault("DOCKER_HOST", "unix:///var/run/docker.sock");
-
-    private volatile DockerClient client;
+    private final DockerClientProvider dockerClientProvider;
 
     private DockerClient client() {
-        if (client == null) {
-            synchronized (this) {
-                if (client == null) {
-                    DefaultDockerClientConfig config =
-                        DefaultDockerClientConfig.createDefaultConfigBuilder()
-                            .withDockerHost(DOCKER_HOST)
-                            .build();
-                    client = DockerClientImpl.getInstance(config);
-                }
-            }
-        }
-        return client;
+        return dockerClientProvider.client();
     }
 
     /** Docker 是否可用 */

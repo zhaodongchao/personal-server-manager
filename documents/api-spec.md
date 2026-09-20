@@ -278,6 +278,7 @@ SysConfig 字段：`configName`、`configKey`、`configValue`、`configType`（Y
 | ---- | ---- | ---- | ---- |
 | GET | `/overview` | `dashboard:view` | 系统概览 + 最新帧 |
 | GET | `/history?minutes=60` | `dashboard:view` | 历史帧（1-60 分钟，钳制） |
+| GET | `/network` | `dashboard:view` | 网络信息快照（宿主机网卡明细 + Docker 虚拟网络 + 汇总） |
 
 `/overview` 响应 `data`（MonitorOverview）：
 
@@ -289,7 +290,9 @@ SysConfig 字段：`configName`、`configKey`、`configValue`、`configType`（Y
 | `physicalDisks[]` | array | 真实物理磁盘（排除 loop/dm/ram 等虚拟设备）`{name, model, serial, sizeBytes, partitions[]{name,mount,sizeBytes,type(文件系统类型),vg(作为 PV 时所属卷组)}}` |
 | `deviceMappers[]` | array | Device Mapper 设备（LVM 逻辑卷映射 / dm-* 等）`{name(/dev/mapper/vg0-root), vg, sizeBytes, fsType, mount}` |
 | `lvm` | object | LVM 信息 `{physicalVolumes[]{name,vg,sizeBytes,freeBytes}, volumeGroups[]{name,pvCount,lvCount,sizeBytes,freeBytes}, logicalVolumes[]{name(设备映射名 vg0-root),vg,sizeBytes,fsType,mount}}`；非 LVM 环境各列表为空 |
-| `interfaces[]` | array | `{name, ipv4, speed}` |
+| `interfaces[]` | array | 宿主机网卡明细（含物理网卡、网桥与容器 veth），与 `/network` 的同名字段同构，字段见下节 |
+| `dockerNetworks[]` | array | Docker 虚拟网络（含接入的容器端点），与 `/network` 同构 |
+| `networkSummary` | object | 网络汇总统计，与 `/network` 同构 |
 | `latest` | MetricFrame | 最新一帧 |
 
 > 磁盘/LVM 数据采集方式：
@@ -311,6 +314,83 @@ SysConfig 字段：`configName`、`configKey`、`configValue`、`configType`（Y
 > ```
 >
 > 裸机 / systemd 部署无需配置（`host-sysroot` 留空）。
+
+### 网络信息快照 `/network`
+
+`/overview` 内嵌的 `interfaces` / `dockerNetworks` / `networkSummary` 与本节完全同构；
+网卡明细字段多、体量大，不适合塞进 Redis 环形缓存与 WebSocket 的每帧推送，故单列端点。
+
+响应 `data`（NetworkInfo）：
+
+| 字段 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `ts` | number | 采集时间戳（毫秒） |
+| `summary` | NetworkSummary | 汇总统计，见下表 |
+| `interfaces[]` | NetInterface[] | 宿主机网卡明细（含物理网卡、网桥与容器 veth），已按类型排序 |
+| `dockerNetworks[]` | DockerNetwork[] | Docker 虚拟网络（含接入的容器端点） |
+| `error` | string \| null | 采集异常时的可读说明；正常为 `null`，前端据此展示告警条而非空白 |
+
+NetInterface（单块网卡；容器部署时经 `HOST_SYSROOT` 读宿主机 `/sys` 与 `/proc`，即宿主机内核视角）：
+
+| 字段 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `name` / `index` | string / number | 内核接口名（`enp6s0` / `docker0` / `br-xxxx` / `vethxxxx`）与 ifindex |
+| `category` | string | 接口分类：`physical` / `bond` / `bridge` / `veth` / `tunnel` / `virtual` / `loopback` |
+| `typeLabel` | string | 类型中文描述（含 Docker 语义），供页面直接展示 |
+| `operState` | string | 管理状态：`up` / `down` / `unknown` / `lowerlayerdown` 等 |
+| `up` | boolean | 管理 UP **且** 链路连通（`carrier`） |
+| `adminUp` / `carrier` | boolean | 管理 UP（IFF_UP）/ 是否检测到载波（物理链路连通） |
+| `loopback` / `bridge` / `bond` | boolean | 回环 / 网桥 / 绑定设备标识 |
+| `master` | string | 上层设备名（veth 挂在网桥上时为其网桥名） |
+| `bridgePorts[]` | string[] | 网桥端口成员名（仅网桥非空） |
+| `dockerRelated` | boolean | 是否与 Docker 相关（`docker0` / `br-*` 网桥及其上的 veth） |
+| `dockerNetwork` | string | 关联的 Docker 网络名（能解析到时非空） |
+| `mac` / `mtu` | string / number | MAC 地址 / MTU |
+| `ipv4` / `cidr` | string | 主 IPv4（兼容字段）/ 主地址 CIDR（优先 IPv4，无则取首个 IPv6） |
+| `ipv4List[]` / `ipv6List[]` | string[] | 全部 IPv4 / IPv6 地址（带前缀长度） |
+| `speed` / `duplex` | number / string | 链路速率 Mbps（未知为 `-1`）/ 双工 `full`、`half`、`unknown` |
+| `driver` / `busInfo` / `vendorId` / `vendor` / `alias` | string | 内核驱动 / 总线地址（物理网卡为 PCI 槽位）/ 设备标识 / 厂商名 / ifalias |
+| `rxBytes` / `txBytes` / `rxPackets` / `txPackets` | number | 累计收发字节与包数 |
+| `rxErrors` / `txErrors` / `rxDropped` / `txDropped` | number | 收发错误与丢弃计数 |
+| `rxRate` / `txRate` | number | 实时收发速率 KB/s（与上一快照的差分值，首帧为 0） |
+| `rxPacketRate` / `txPacketRate` | number | 收发包速率 包/s（差分值） |
+
+DockerNetwork（对应 `docker network inspect` 的关键字段）：
+
+| 字段 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `id` / `name` | string | 网络 ID（12 位短 ID）/ 网络名（`bridge` / `host` / `none` / 自定义名） |
+| `driver` / `scope` | string | 驱动（`bridge` / `host` / `overlay` / `null`）/ 作用域（`local` / `swarm`） |
+| `internal` / `attachable` / `ipv6Enabled` | boolean | 内部网络 / 允许手动挂载容器 / 启用 IPv6 |
+| `subnet` / `gateway` | string | 子网 CIDR（如 `172.22.0.0/16`）/ 网关地址 |
+| `bridgeName` | string | 宿主侧网桥名（`docker0` / `br-xxxx`；`host`、`none` 等无网桥时为空串） |
+| `createdAt` | number | 网络创建时间（毫秒时间戳，未知为 0） |
+| `containerCount` | number | 接入本网络的容器数 |
+| `containers[]` | NetworkAttachment[] | 容器端点 `{containerId, containerName, ipv4(网络内 IPv4), mac}` |
+
+NetworkSummary（汇总统计；`total` 与累计流量均不含回环）：
+
+| 字段 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `total` / `up` | number | 接口总数 / 可用接口数（管理 UP 且链路连通） |
+| `physical` / `bridge` / `veth` | number | 物理网卡 / 网桥 / 容器虚拟网卡数 |
+| `dockerRelated` | number | 与 Docker 相关的接口数 |
+| `dockerNetworks` / `dockerContainers` | number | Docker 网络数 / 接入容器数（按容器去重） |
+| `totalRxBytes` / `totalTxBytes` | number | 全部接口累计接收 / 发送字节 |
+| `rxRate` / `txRate` | number | 全部接口实时接收 / 发送速率合计 KB/s |
+| `defaultGateway` / `defaultInterface` | string | 默认网关（IPv4，无默认路由为空串）/ 默认出口网卡名 |
+
+> 网络数据采集方式（不依赖容器内 `ip` / `docker` CLI）：
+> 接口名与收发计数读 `<host-sysroot>/proc/net/dev`（含错误与丢弃列），IPv6 前缀读
+> `<host-sysroot>/proc/net/if_inet6`，默认网关读 `<host-sysroot>/proc/net/route`（小端十六进制转 IPv4）；
+> 类型、驱动、总线、网桥端口与上层设备由 sysfs 推导
+> （`/sys/class/net/<if>/device/uevent` 取 DRIVER / PCI_SLOT_NAME / PCI_ID，
+> `/sys/class/net/<br>/brif/` 取网桥端口，`/sys/class/net/<veth>/master` 指向所属网桥）；
+> Docker 网络经 docker-java 调 `listNetworksCmd()`（30s 缓存，避免每 5s 打爆 docker.sock），
+> 宿主网桥名按 `com.docker.network.bridge.name` 选项 → `docker0` → `br-<id 前 12 位>` 依次推导。
+>
+> 采集异常（如 Docker 未安装、`docker.sock` 未挂载）不影响其余字段，仅写入 `error` 或使
+> `dockerNetworks` 为空数组。
 
 MetricFrame（`/history` 返回数组，WebSocket 推送同构）：
 

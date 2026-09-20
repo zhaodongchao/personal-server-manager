@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.serverpanel.common.core.R;
 import com.serverpanel.monitor.dto.MetricFrame;
 import com.serverpanel.monitor.dto.MonitorOverview;
+import com.serverpanel.monitor.dto.NetworkInfo;
 import com.serverpanel.monitor.service.MetricsCollector;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
@@ -30,6 +31,13 @@ public class MonitorController {
     @GetMapping("/overview")
     public R<MonitorOverview> overview() {
         return R.ok(metricsCollector.overview());
+    }
+
+    /** 网络信息（主机真实网卡明细 + Docker 虚拟网络 + 汇总统计） */
+    @SaCheckPermission("dashboard:view")
+    @GetMapping("/network")
+    public R<NetworkInfo> network() {
+        return R.ok(metricsCollector.network());
     }
 
     /** 历史帧（最近 minutes 分钟，默认 60） */

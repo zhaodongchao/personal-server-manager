@@ -34,8 +34,14 @@ public class MonitorOverview {
     /** LVM 信息（非 Linux 或无 lvm2 时为空） */
     private LvmInfo lvm;
 
-    /** 网卡列表 */
-    private List<NetInterface> interfaces;
+    /** 网卡列表（主机真实网卡 + Docker 虚拟设备，模型见 NetworkInfo.NetInterface） */
+    private List<NetworkInfo.NetInterface> interfaces;
+
+    /** Docker 虚拟网络列表（含接入本机的容器端点） */
+    private List<NetworkInfo.DockerNetwork> dockerNetworks;
+
+    /** 网络汇总统计（接口数、流量合计、默认网关等） */
+    private NetworkInfo.NetworkSummary networkSummary;
 
     /** 最新一帧 */
     private MetricFrame latest;
@@ -141,11 +147,4 @@ public class MonitorOverview {
         private String mount;
     }
 
-    @Data
-    public static class NetInterface {
-        private String name;
-        private String ipv4;
-        /** 接口速率 Mbps（未知为 -1） */
-        private long speed;
-    }
 }
