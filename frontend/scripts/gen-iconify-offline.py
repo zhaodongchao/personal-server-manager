@@ -19,9 +19,11 @@ gen-iconify-offline.py  ——  ServerPanel 前端「图标离线化」生成器
   1) apps/web-antd/public/iconify-preload.js
      - window.IconifyPreload   : 内联「源码实际用到」的图标数据（约 10KB），
                                 `@iconify/vue` 初始化时自动 addCollection（零请求、立即可渲染）
-     - window.IconifyProviders : 把图标 API 指向站内 /iconify/，
+     - window.IconifyProviders : 把图标 API 指向站内 /iconify（写成 resources: ['/iconify']），
                                 未内联的图标走本地静态文件（毫秒级），
                                 且**不会**再回退到 api.iconify.design / *.unisvg.com
+                                注意 URL 拼接规则 = resources[i] + path + '<prefix>.json'，
+                                path 保持默认 '/'，故 resources 不能带尾斜杠。
 
   2) apps/web-antd/public/iconify/collections.json
      - 各图标集的「图标名清单」，供 @vben 的 IconPicker（packages/effects/common-ui）
@@ -328,22 +330,25 @@ def main() -> int:
         "/* eslint-disable */\n"
         "/* 由 frontend/scripts/gen-iconify-offline.py 自动生成，请勿手改。\n"
         " * 作用：图标数据内联 + 把图标 API 指向站内 /iconify/，避免运行时访问公网 CDN。\n"
-        " * 关键：IconifyProviders[''] 必须是**唯一**资源（站点根相对路径 /iconify/），\n"
-        " *       这样 @iconify/vue 默认的 [api.iconify.design, api.simplesvg.com, api.unisvg.com]\n"
-        " *       会被整体替换，任何图标都只可能打到本机。\n"
+        " *\n"
+        " * ⚠️ 关键：@iconify/vue 组装请求 URL 的规则是\n"
+        " *        URL = resources[i]  +  path  +  `<prefix>.json?icons=...`\n"
+        " *    （见 @iconify/vue/dist/iconify.mjs 的 createAPIConfig / send）\n"
+        " *    默认 config 是 { resources: ['https://api.iconify.design'], path: '/' }。\n"
+        " *    因此这里 **只能** 写 resources: ['/iconify']（主机部分，不带尾斜杠），\n"
+        " *    并保持 path 为默认 '/'。\n"
+        " *    若写成 resources: ['/iconify/'] + path: '/iconify/'，会拼出\n"
+        " *    /iconify//iconify/<prefix>.json 而 404（踩过一次）。\n"
+        " *    另外：resources 只放站内路径，公网默认的\n"
+        " *    [api.iconify.design, api.simplesvg.com, api.unisvg.com] 会被整体替换。\n"
         " */\n"
         "(function () {\n"
         "  window.IconifyPreload = %s;\n"
+        "  // 只覆盖 resources，其余（path '/'、maxURL、timeout、rotate）沿用库默认值，\n"
+        "  // 避免与库语义漂移。\n"
         "  window.IconifyProviders = {\n"
         "    '': {\n"
-        "      resources: ['/iconify/'],\n"
-        "      path: '/iconify/',\n"
-        "      maxURL: 500,\n"
-        "      rotate: 100,\n"
-        "      timeout: 3000,\n"
-        "      random: false,\n"
-        "      index: 0,\n"
-        "      dataAfterTimeout: false,\n"
+        "      resources: ['/iconify'],\n"
         "    },\n"
         "  };\n"
         "})();\n"
