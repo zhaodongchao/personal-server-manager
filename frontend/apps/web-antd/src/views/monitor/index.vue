@@ -16,8 +16,8 @@ import {
   Progress,
   Row,
   Statistic,
-  TabPane,
   Table,
+  TabPane,
   Tabs,
 } from 'ant-design-vue';
 
@@ -75,7 +75,11 @@ interface FsTreeNode {
   key: string;
   /** 展示名：根为 "/"，子节点为末段目录名 */
   name: string;
+  /** 挂载源设备，如 /dev/mapper/vg0-root */
+  source: string;
   fsType: string;
+  /** 所属 LVM 卷组（非 LVM 挂载为空串） */
+  vg: string;
   totalBytes: number;
   usableBytes: number;
   usage: number;
@@ -83,8 +87,8 @@ interface FsTreeNode {
 }
 
 /** 计算挂载点在文件系统树中的父挂载点（最长字面前缀），无则返回 null */
-function parentMount(mount: string, disks: MonitorApi.DiskInfo[]): string | null {
-  let best: string | null = null;
+function parentMount(mount: string, disks: MonitorApi.DiskInfo[]): null | string {
+  let best: null | string = null;
   for (const d of disks) {
     const p = d.mount;
     if (p === mount) continue;
@@ -115,7 +119,9 @@ const fsTree = computed<FsTreeNode[]>(() => {
     nodeMap.set(d.mount, {
       key: d.mount,
       name: d.mount === '/' ? '/' : d.mount.split('/').filter(Boolean).at(-1) ?? d.mount,
+      source: d.source ?? '',
       fsType: d.fsType,
+      vg: d.vg ?? '',
       totalBytes: d.totalBytes,
       usableBytes: d.usableBytes,
       usage: d.usage,
@@ -138,7 +144,12 @@ const fsTree = computed<FsTreeNode[]>(() => {
   }
   // 按名称排序（根优先），children 递归排序
   const sortRec = (arr: FsTreeNode[]) => {
-    arr.sort((a, b) => (a.name === '/') - (b.name === '/') || a.name.localeCompare(b.name));
+    arr.sort((a, b) => {
+      // 根节点 "/" 置顶
+      if (a.name === '/') return b.name === '/' ? 0 : -1;
+      if (b.name === '/') return 1;
+      return a.name.localeCompare(b.name);
+    });
     arr.forEach((n) => sortRec(n.children));
   };
   sortRec(roots);
@@ -494,7 +505,15 @@ onBeforeUnmount(() => {
                     size="small"
                   >
                     <Table.Column data-index="name" title="分区" />
-                    <Table.Column data-index="type" title="格式化" />
+                    <Table.Column title="格式化">
+                      <template #default="{ record: p }">
+                        {{
+                          p.vg
+                            ? `LVM2 → ${p.vg}`
+                            : p.type || '-'
+                        }}
+                      </template>
+                    </Table.Column>
                     <Table.Column data-index="mount" title="挂载点">
                       <template #default="{ record: p }">
                         {{ p.mount || '-' }}
@@ -527,6 +546,11 @@ onBeforeUnmount(() => {
                 <Table.Column title="设备">
                   <template #default="{ record }">
                     {{ record.name }}
+                  </template>
+                </Table.Column>
+                <Table.Column title="卷组">
+                  <template #default="{ record }">
+                    {{ record.vg || '-' }}
                   </template>
                 </Table.Column>
                 <Table.Column title="容量">
@@ -617,6 +641,16 @@ onBeforeUnmount(() => {
                       {{ formatBytes(record.sizeBytes) }}
                     </template>
                   </Table.Column>
+                  <Table.Column title="格式化">
+                    <template #default="{ record }">
+                      {{ record.fsType || '-' }}
+                    </template>
+                  </Table.Column>
+                  <Table.Column title="挂载点">
+                    <template #default="{ record }">
+                      {{ record.mount || '-' }}
+                    </template>
+                  </Table.Column>
                 </Table>
               </template>
             </TabPane>
@@ -634,9 +668,19 @@ onBeforeUnmount(() => {
                     {{ record.name }}
                   </template>
                 </Table.Column>
+                <Table.Column title="设备">
+                  <template #default="{ record }">
+                    {{ record.source || '-' }}
+                  </template>
+                </Table.Column>
                 <Table.Column title="文件系统">
                   <template #default="{ record }">
                     {{ record.fsType || '-' }}
+                  </template>
+                </Table.Column>
+                <Table.Column title="LVM 卷组">
+                  <template #default="{ record }">
+                    {{ record.vg || '-' }}
                   </template>
                 </Table.Column>
                 <Table.Column title="总量">

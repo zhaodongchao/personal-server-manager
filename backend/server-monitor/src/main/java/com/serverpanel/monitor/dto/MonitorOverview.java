@@ -42,8 +42,15 @@ public class MonitorOverview {
 
     @Data
     public static class DiskInfo {
+        /** 挂载点，如 / 或 /data */
         private String mount;
+        /** 挂载源设备，如 /dev/mapper/vg0-root 或 /dev/sda1 */
+        private String source;
+
         private String fsType;
+        /** 所属 LVM 卷组（非 LVM 挂载为空串） */
+        private String vg;
+
         private long totalBytes;
         private long usableBytes;
         /** 使用率 0-100 */
@@ -73,6 +80,8 @@ public class MonitorOverview {
         private long sizeBytes;
         /** 分区类型，如 linux */
         private String type;
+        /** 分区作为 LVM 物理卷时所属卷组（非 PV 为空串） */
+        private String vg;
     }
 
     /** Device Mapper 设备（LVM 逻辑卷映射 / dm-* 等） */
@@ -80,6 +89,8 @@ public class MonitorOverview {
     public static class DeviceMapper {
         /** 设备路径，如 /dev/mapper/vg0-root 或 /dev/dm-0 */
         private String name;
+        /** 所属 LVM 卷组（非 LVM 设备为空串） */
+        private String vg;
 
         private long sizeBytes;
         /** 文件系统类型（格式化方式），如 ext4 / xfs */
@@ -118,11 +129,16 @@ public class MonitorOverview {
 
     @Data
     public static class LogicalVolume {
+        /** 逻辑卷设备映射名，如 vg0-root（对应 /dev/mapper/vg0-root） */
         private String name;
         /** 所属卷组名 */
         private String vg;
 
         private long sizeBytes;
+        /** 文件系统类型（未格式化或未知为空串） */
+        private String fsType;
+        /** 挂载点（未挂载则空串） */
+        private String mount;
     }
 
     @Data
