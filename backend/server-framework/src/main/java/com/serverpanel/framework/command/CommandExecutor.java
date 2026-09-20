@@ -1,11 +1,5 @@
 package com.serverpanel.framework.command;
 
-import com.serverpanel.common.exception.ErrorCode;
-import com.serverpanel.common.exception.ServiceException;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -17,6 +11,13 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+
+import com.serverpanel.common.exception.ErrorCode;
+import com.serverpanel.common.exception.ServiceException;
+
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * 安全命令执行器 —— 全系统唯一的系统命令出口。
@@ -35,15 +36,23 @@ public class CommandExecutor {
 
     /** 命令执行专用虚拟线程池（每个任务一个虚拟线程） */
     private static final ExecutorService VIRTUAL_EXECUTOR = Executors.newThreadPerTaskExecutor(
-        Thread.ofVirtual().name("cmd-exec-", 0).factory());
+            Thread.ofVirtual().name("cmd-exec-", 0).factory());
 
     /** 内置命令白名单：本面板需要的系统命令（不含任何 shell 解释器） */
     private static final Set<String> BUILTIN_WHITELIST = Set.of(
-        "ps", "kill",
-        "systemctl", "journalctl",
-        "nginx",
-        "ufw", "firewall-cmd",
-        "mysql", "mysqldump", "mysqladmin");
+            "ps",
+            "kill",
+            "systemctl",
+            "journalctl",
+            "nginx",
+            "ufw",
+            "firewall-cmd",
+            "mysql",
+            "mysqldump",
+            "mysqladmin",
+            "pvs",
+            "vgs",
+            "lvs");
 
     private final long timeoutSeconds;
 
@@ -123,12 +132,10 @@ public class CommandExecutor {
             } else {
                 exitCode = process.exitValue();
             }
-            return new ExecResult(exitCode, stdout, stderr, timedOut,
-                System.currentTimeMillis() - start);
+            return new ExecResult(exitCode, stdout, stderr, timedOut, System.currentTimeMillis() - start);
         } catch (IOException e) {
             log.error("Failed to start command: {}", argv[0], e);
-            throw new ServiceException(ErrorCode.ERROR.getCode(),
-                "命令启动失败: " + argv[0]);
+            throw new ServiceException(ErrorCode.ERROR.getCode(), "命令启动失败: " + argv[0]);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             if (process != null) {

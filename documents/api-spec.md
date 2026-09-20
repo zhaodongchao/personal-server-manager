@@ -285,7 +285,9 @@ SysConfig 字段：`configName`、`configKey`、`configValue`、`configType`（Y
 | ---- | ---- | ---- |
 | `hostname` / `os` / `kernel` / `cpuModel` | string | 主机信息 |
 | `cpuPhysicalCores` / `cpuLogicalCores` | number | 核数 |
-| `disks[]` | array | `{mount, fsType, totalBytes, usableBytes, usage}` |
+| `disks[]` | array | 逻辑文件系统 `{mount, fsType, totalBytes, usableBytes, usage}` |
+| `physicalDisks[]` | array | 物理磁盘 `{name, model, serial, sizeBytes, partitions[]{name,mount,sizeBytes,type}}` |
+| `lvm` | object | LVM 信息 `{physicalVolumes[]{name,vg,sizeBytes,freeBytes}, volumeGroups[]{name,pvCount,lvCount,sizeBytes,freeBytes}, logicalVolumes[]{name,vg,sizeBytes}}`；非 LVM 环境各列表为空 |
 | `interfaces[]` | array | `{name, ipv4, speed}` |
 | `latest` | MetricFrame | 最新一帧 |
 

@@ -27,6 +27,50 @@ export namespace MonitorApi {
     usage: number;
   }
 
+  /** 物理磁盘详细信息（与后端 MonitorOverview.PhysicalDisk 一致） */
+  export interface PhysicalDisk {
+    name: string;
+    model: string;
+    serial: string;
+    sizeBytes: number;
+    partitions: DiskPartition[];
+  }
+
+  export interface DiskPartition {
+    name: string;
+    mount: string;
+    sizeBytes: number;
+    type: string;
+  }
+
+  /** LVM 信息（与后端 MonitorOverview.LvmInfo 一致） */
+  export interface LvmInfo {
+    physicalVolumes: LvmPhysicalVolume[];
+    volumeGroups: LvmVolumeGroup[];
+    logicalVolumes: LvmLogicalVolume[];
+  }
+
+  export interface LvmPhysicalVolume {
+    name: string;
+    vg: string;
+    sizeBytes: number;
+    freeBytes: number;
+  }
+
+  export interface LvmVolumeGroup {
+    name: string;
+    pvCount: number;
+    lvCount: number;
+    sizeBytes: number;
+    freeBytes: number;
+  }
+
+  export interface LvmLogicalVolume {
+    name: string;
+    vg: string;
+    sizeBytes: number;
+  }
+
   export interface NetInterface {
     name: string;
     ipv4: string;
@@ -42,6 +86,8 @@ export namespace MonitorApi {
     cpuPhysicalCores: number;
     cpuLogicalCores: number;
     disks: DiskInfo[];
+    physicalDisks: PhysicalDisk[];
+    lvm: LvmInfo;
     interfaces: NetInterface[];
     latest: MetricFrame;
   }
