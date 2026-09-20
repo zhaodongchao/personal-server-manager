@@ -9,5 +9,6 @@ export * from './system/config';
 export * from './system/dict';
 export * from './system/log';
 export * from './system/menu';
+export * from './system/quick-nav';
 export * from './system/role';
 export * from './system/user';

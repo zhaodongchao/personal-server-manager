@@ -20,7 +20,7 @@ export const overridesPreferences = defineOverridesPreferences({
   // overrides
   app: {
     accessMode: 'backend',
-    defaultHomePath: '/dashboard/index',
+    defaultHomePath: '/overview/monitor',
     enableRefreshToken: false,
     name: import.meta.env.VITE_APP_TITLE,
   },

@@ -70,8 +70,8 @@ const visitTotal = computed(() =>
 const sourceChartRef = ref<EchartsUIType>();
 const { renderEcharts: renderSource } = useEcharts(sourceChartRef);
 
-function serviceIcon(displayName: string): string {
-  return SERVICE_ICONS[displayName] ?? DEFAULT_ICON;
+function serviceIcon(service: DashboardApi.QuickService): string {
+  return service.icon || SERVICE_ICONS[service.displayName] || DEFAULT_ICON;
 }
 
 /** 服务访问地址：http://<host>:<port><path>（端口未知则仅返回主机） */
@@ -147,7 +147,7 @@ onMounted(async () => {
           <div
             class="flex h-11 w-11 items-center justify-center rounded-full bg-primary/10 text-xl text-primary transition-transform group-hover:scale-110"
           >
-            <IconifyIcon :icon="serviceIcon(service.displayName)" />
+            <IconifyIcon :icon="serviceIcon(service)" />
           </div>
           <div class="text-sm font-medium">{{ service.displayName }}</div>
           <div class="flex items-center gap-1 text-xs text-gray-400">
