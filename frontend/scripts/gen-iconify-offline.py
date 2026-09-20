@@ -48,6 +48,7 @@ gen-iconify-offline.py  ——  ServerPanel 前端「图标离线化」生成器
 from __future__ import annotations
 
 import glob
+import hashlib
 import json
 import os
 import re
@@ -358,6 +359,30 @@ def main() -> int:
 
     with open(COLLECTIONS_FILE, "w", encoding="utf-8") as f:
         json.dump(collections_names, f, ensure_ascii=True, separators=(",", ":"))
+
+    # ---- 给 index.html 中的预加载脚本加内容指纹 ----
+    # 原因：iconify-preload.js 文件名稳定，而 nginx 对 .js 默认打 `expires 30d; immutable`，
+    # 浏览器会**长期复用旧副本**，导致离线数据/Provider 配置更新后不到生效（本仓库踩过一次：
+    # 修正 provider URL 后线上仍跑旧配置）。加 ?v=<内容指纹> 即变成内容寻址，可安全长缓存。
+    stamp = hashlib.sha1(body.encode("utf-8")).hexdigest()[:8]
+    index_html = os.path.join(FRONTEND_DIR, "apps", "web-antd", "index.html")
+    if os.path.isfile(index_html):
+        with open(index_html, "r", encoding="utf-8") as f:
+            html = f.read()
+        new_html, n = re.subn(
+            r'<script src="/iconify-preload\.js(?:\?v=[0-9a-f]+)?"></script>',
+            '<script src="/iconify-preload.js?v=%s"></script>' % stamp,
+            html,
+        )
+        if n:
+            with open(index_html, "w", encoding="utf-8") as f:
+                f.write(new_html)
+            print("[OK] %s  -> /iconify-preload.js?v=%s"
+                  % (os.path.relpath(index_html, FRONTEND_DIR), stamp))
+        else:
+            sys.stderr.write(
+                '[WARN] index.html 未找到 <script src="/iconify-preload.js"></script>，未打版本戳\n'
+            )
 
     iconify_total = sum(
         os.path.getsize(os.path.join(ICONIFY_OUT_DIR, n))
