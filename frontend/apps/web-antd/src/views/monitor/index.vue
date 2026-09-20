@@ -3,7 +3,7 @@ import type { EchartsUIType } from '@vben/plugins/echarts';
 
 import type { MonitorApi } from '#/api';
 
-import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 import { useAccessStore } from '@vben/stores';
@@ -16,7 +16,9 @@ import {
   Progress,
   Row,
   Statistic,
+  TabPane,
   Table,
+  Tabs,
 } from 'ant-design-vue';
 
 import { getMonitorHistoryApi, getMonitorOverviewApi } from '#/api';
@@ -57,6 +59,17 @@ function formatUptime(seconds: number): string {
 }
 
 const latest = () => frames.value.at(-1);
+
+/** 是否存在 LVM 卷（任一子列表非空即展示 LVM 页签） */
+const hasLvm = computed(() => {
+  const lvm = overview.value?.lvm;
+  if (!lvm) return false;
+  return (
+    lvm.physicalVolumes.length > 0 ||
+    lvm.volumeGroups.length > 0 ||
+    lvm.logicalVolumes.length > 0
+  );
+});
 
 function timeLabels(): string[] {
   return frames.value.map((f) =>
@@ -371,34 +384,153 @@ onBeforeUnmount(() => {
       </Col>
       <Col :lg="8" :xs="24">
         <Card title="磁盘">
-          <Table
-            :data-source="overview?.disks ?? []"
-            :pagination="false"
-            row-key="mount"
-            size="small"
-          >
-            <Table.Column data-index="mount" title="挂载点" />
-            <Table.Column data-index="fsType" title="文件系统" />
-            <Table.Column title="总量">
-              <template #default="{ record }">
-                {{ formatBytes(record.totalBytes) }}
-              </template>
-            </Table.Column>
-            <Table.Column title="可用">
-              <template #default="{ record }">
-                {{ formatBytes(record.usableBytes) }}
-              </template>
-            </Table.Column>
-            <Table.Column title="使用率">
-              <template #default="{ record }">
-                <Progress
-                  :percent="Number(record.usage.toFixed(1))"
-                  size="small"
-                  :status="record.usage > 85 ? 'exception' : 'normal'"
+          <Tabs>
+            <TabPane key="fs" tab="文件系统">
+              <Table
+                :data-source="overview?.disks ?? []"
+                :pagination="false"
+                row-key="mount"
+                size="small"
+              >
+                <Table.Column data-index="mount" title="挂载点" />
+                <Table.Column data-index="fsType" title="文件系统" />
+                <Table.Column title="总量">
+                  <template #default="{ record }">
+                    {{ formatBytes(record.totalBytes) }}
+                  </template>
+                </Table.Column>
+                <Table.Column title="可用">
+                  <template #default="{ record }">
+                    {{ formatBytes(record.usableBytes) }}
+                  </template>
+                </Table.Column>
+                <Table.Column title="使用率">
+                  <template #default="{ record }">
+                    <Progress
+                      :percent="Number(record.usage.toFixed(1))"
+                      size="small"
+                      :status="record.usage > 85 ? 'exception' : 'normal'"
+                    />
+                  </template>
+                </Table.Column>
+              </Table>
+            </TabPane>
+
+            <TabPane key="disk" tab="物理磁盘">
+              <Table
+                :data-source="overview?.physicalDisks ?? []"
+                :pagination="false"
+                row-key="name"
+                size="small"
+              >
+                <Table.Column title="设备">
+                  <template #default="{ record }">
+                    {{ record.name }}
+                  </template>
+                </Table.Column>
+                <Table.Column title="型号">
+                  <template #default="{ record }">
+                    {{ record.model || '-' }}
+                  </template>
+                </Table.Column>
+                <Table.Column title="容量">
+                  <template #default="{ record }">
+                    {{ formatBytes(record.sizeBytes) }}
+                  </template>
+                </Table.Column>
+                <template #expandedRowRender="{ record }">
+                  <Table
+                    :data-source="record.partitions"
+                    :pagination="false"
+                    row-key="name"
+                    size="small"
+                  >
+                    <Table.Column data-index="name" title="分区" />
+                    <Table.Column data-index="type" title="类型" />
+                    <Table.Column data-index="mount" title="挂载点">
+                      <template #default="{ record: p }">
+                        {{ p.mount || '-' }}
+                      </template>
+                    </Table.Column>
+                    <Table.Column title="大小">
+                      <template #default="{ record: p }">
+                        {{ formatBytes(p.sizeBytes) }}
+                      </template>
+                    </Table.Column>
+                  </Table>
+                </template>
+              </Table>
+            </TabPane>
+
+            <TabPane v-if="hasLvm" key="lvm" tab="LVM">
+              <div class="mb-2 text-xs text-gray-400">物理卷（PV）</div>
+              <Table
+                :data-source="overview?.lvm?.physicalVolumes ?? []"
+                :pagination="false"
+                row-key="name"
+                size="small"
+              >
+                <Table.Column data-index="name" title="物理卷" />
+                <Table.Column data-index="vg" title="卷组" />
+                <Table.Column title="大小">
+                  <template #default="{ record }">
+                    {{ formatBytes(record.sizeBytes) }}
+                  </template>
+                </Table.Column>
+                <Table.Column title="可用">
+                  <template #default="{ record }">
+                    {{ formatBytes(record.freeBytes) }}
+                  </template>
+                </Table.Column>
+              </Table>
+
+              <div class="mb-2 mt-2 text-xs text-gray-400">卷组（VG）</div>
+              <Table
+                :data-source="overview?.lvm?.volumeGroups ?? []"
+                :pagination="false"
+                row-key="name"
+                size="small"
+              >
+                <Table.Column data-index="name" title="卷组" />
+                <Table.Column
+                  data-index="pvCount"
+                  title="物理卷数"
+                  :width="80"
                 />
-              </template>
-            </Table.Column>
-          </Table>
+                <Table.Column
+                  data-index="lvCount"
+                  title="逻辑卷数"
+                  :width="80"
+                />
+                <Table.Column title="大小">
+                  <template #default="{ record }">
+                    {{ formatBytes(record.sizeBytes) }}
+                  </template>
+                </Table.Column>
+                <Table.Column title="可用">
+                  <template #default="{ record }">
+                    {{ formatBytes(record.freeBytes) }}
+                  </template>
+                </Table.Column>
+              </Table>
+
+              <div class="mb-2 mt-2 text-xs text-gray-400">逻辑卷（LV）</div>
+              <Table
+                :data-source="overview?.lvm?.logicalVolumes ?? []"
+                :pagination="false"
+                row-key="name"
+                size="small"
+              >
+                <Table.Column data-index="name" title="逻辑卷" />
+                <Table.Column data-index="vg" title="卷组" />
+                <Table.Column title="大小">
+                  <template #default="{ record }">
+                    {{ formatBytes(record.sizeBytes) }}
+                  </template>
+                </Table.Column>
+              </Table>
+            </TabPane>
+          </Tabs>
         </Card>
       </Col>
       <Col :lg="8" :xs="24">
