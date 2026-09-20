@@ -28,6 +28,8 @@ export namespace DashboardApi {
     port: number;
     /** Web 访问路径前缀 */
     path: string;
+    /** 前端图标（如 lucide:gitlab） */
+    icon: string;
     /** 是否正在运行 */
     running: boolean;
   }

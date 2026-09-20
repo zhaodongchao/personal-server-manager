@@ -7,6 +7,7 @@ import com.serverpanel.system.dto.dashboard.QuickService;
 import com.serverpanel.system.dto.dashboard.SshLoginInfo;
 import com.serverpanel.system.dto.dashboard.VisitSource;
 import com.serverpanel.system.entity.SysLoginLog;
+import com.serverpanel.system.entity.SysQuickNav;
 import com.serverpanel.system.mapper.SysLoginLogMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -40,12 +41,13 @@ public class DashboardService {
     private static final DateTimeFormatter DISPLAY_TIME =
         DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-    /** 已知服务 -> 展示名 / Web 端口 / 路径（用于快捷导航） */
-    private static final Map<String, String[]> KNOWN_SERVICES = buildKnownServices();
+    /** 展示名 -> 匹配关键字列表（用于从运行中 systemd 单元识别运行状态） */
+    private static final Map<String, List<String>> SERVICE_KEYWORDS = buildServiceKeywords();
 
     private final CommandExecutor commandExecutor;
     private final SysLoginLogMapper loginLogMapper;
     private final IpRegionService ipRegionService;
+    private final QuickNavService quickNavService;
 
     /**
      * 最近 N 次 SSH 登录成功记录（来自 journald sshd 日志，最新在前）。
@@ -81,36 +83,29 @@ public class DashboardService {
     }
 
     /**
-     * 快捷导航：识别运行中的已知 Web 服务（gitlab/jenkins/jellyfin/...）。
+     * 快捷导航：读取 sys_quick_nav 启用配置（排序升序），并实时识别运行状态。
      */
     public List<QuickService> quickServices() {
+        List<SysQuickNav> navs = quickNavService.listEnabled();
+        if (navs.isEmpty()) {
+            return List.of();
+        }
+        List<String> runningUnits = runningUnitNames();
         List<QuickService> result = new ArrayList<>();
-        try {
-            ExecResult exec = commandExecutor.exec(
-                "systemctl", "list-units", "--type=service", "--state=running",
-                "--no-pager", "--no-legend", "--plain");
-            if (exec.getExitCode() != 0) {
-                return result;
-            }
-            for (String line : exec.getStdout().split("\\r?\\n")) {
-                if (line.isBlank()) {
-                    continue;
-                }
-                String name = line.trim().split("\\s+")[0];
-                String key = matchKnown(name);
-                if (key == null) {
-                    continue;
-                }
-                QuickService svc = new QuickService();
-                svc.setName(name);
-                svc.setDisplayName(KNOWN_SERVICES.get(key)[0]);
-                svc.setPort(Integer.parseInt(KNOWN_SERVICES.get(key)[1]));
-                svc.setPath(KNOWN_SERVICES.get(key)[2]);
-                svc.setRunning(true);
-                result.add(svc);
-            }
-        } catch (Exception e) {
-            log.warn("Failed to query quick services: {}", e.getMessage());
+        for (SysQuickNav nav : navs) {
+            List<String> keywords = SERVICE_KEYWORDS.getOrDefault(
+                nav.getDisplayName(), List.of());
+            QuickService svc = new QuickService();
+            svc.setName(keywords.isEmpty()
+                ? nav.getDisplayName().toLowerCase(Locale.ROOT)
+                : keywords.get(0));
+            svc.setDisplayName(nav.getDisplayName());
+            svc.setPort(nav.getPort() == null ? -1 : nav.getPort());
+            svc.setPath(nav.getPath() == null ? "" : nav.getPath());
+            svc.setIcon(nav.getIcon() == null || nav.getIcon().isBlank()
+                ? "lucide:app-window" : nav.getIcon());
+            svc.setRunning(isRunning(runningUnits, keywords));
+            result.add(svc);
         }
         return result;
     }
@@ -144,37 +139,55 @@ public class DashboardService {
         return result;
     }
 
-    /** 服务名包含已知关键字则返回关键字，否则 null（按最长关键字优先） */
-    private String matchKnown(String unitName) {
-        String lower = unitName.toLowerCase(Locale.ROOT);
-        String best = null;
-        for (String key : KNOWN_SERVICES.keySet()) {
-            if (lower.contains(key) && (best == null || key.length() > best.length())) {
-                best = key;
+    /** 当前运行中的 systemd 服务名列表（小写） */
+    private List<String> runningUnitNames() {
+        try {
+            ExecResult exec = commandExecutor.exec(
+                "systemctl", "list-units", "--type=service", "--state=running",
+                "--no-pager", "--no-legend", "--plain");
+            if (exec.getExitCode() != 0) {
+                return List.of();
             }
+            List<String> names = new ArrayList<>();
+            for (String line : exec.getStdout().split("\\r?\\n")) {
+                if (!line.isBlank()) {
+                    names.add(line.trim().split("\\s+")[0].toLowerCase(Locale.ROOT));
+                }
+            }
+            return names;
+        } catch (Exception e) {
+            log.warn("Failed to query running units: {}", e.getMessage());
+            return List.of();
         }
-        return best;
     }
 
-    /** 已知服务表：关键字 -> {展示名, 端口, 路径} */
-    private static Map<String, String[]> buildKnownServices() {
-        Map<String, String[]> map = new LinkedHashMap<>();
-        map.put("gitlab", new String[]{"GitLab", "80", ""});
-        map.put("jenkins", new String[]{"Jenkins", "8080", ""});
-        map.put("jellyfin", new String[]{"Jellyfin", "8096", ""});
-        map.put("nginx", new String[]{"Nginx", "80", ""});
-        map.put("apache2", new String[]{"Apache", "80", ""});
-        map.put("httpd", new String[]{"Apache", "80", ""});
-        map.put("portainer", new String[]{"Portainer", "9000", ""});
-        map.put("minio", new String[]{"MinIO", "9001", ""});
-        map.put("nextcloud", new String[]{"Nextcloud", "80", ""});
-        map.put("emby", new String[]{"Emby", "8096", ""});
-        map.put("plexmediaserver", new String[]{"Plex", "32400", ""});
-        map.put("qbittorrent", new String[]{"qBittorrent", "8080", ""});
-        map.put("sonarr", new String[]{"Sonarr", "8989", ""});
-        map.put("radarr", new String[]{"Radarr", "7878", ""});
-        map.put("prowlarr", new String[]{"Prowlarr", "9696", ""});
-        map.put("transmission", new String[]{"Transmission", "9091", ""});
+    /** 运行状态：有关键字则匹配运行单元；无关键字按启用配置视为运行中 */
+    private boolean isRunning(List<String> runningUnits, List<String> keywords) {
+        if (keywords.isEmpty()) {
+            return true;
+        }
+        return runningUnits.stream()
+            .anyMatch(unit -> keywords.stream().anyMatch(unit::contains));
+    }
+
+    /** 已知服务表：展示名 -> systemd 单元匹配关键字 */
+    private static Map<String, List<String>> buildServiceKeywords() {
+        Map<String, List<String>> map = new LinkedHashMap<>();
+        map.put("GitLab", List.of("gitlab"));
+        map.put("Jenkins", List.of("jenkins"));
+        map.put("Jellyfin", List.of("jellyfin"));
+        map.put("Nginx", List.of("nginx"));
+        map.put("Apache", List.of("apache2", "httpd"));
+        map.put("Portainer", List.of("portainer"));
+        map.put("MinIO", List.of("minio"));
+        map.put("Nextcloud", List.of("nextcloud"));
+        map.put("Emby", List.of("emby"));
+        map.put("Plex", List.of("plexmediaserver"));
+        map.put("qBittorrent", List.of("qbittorrent"));
+        map.put("Sonarr", List.of("sonarr"));
+        map.put("Radarr", List.of("radarr"));
+        map.put("Prowlarr", List.of("prowlarr"));
+        map.put("Transmission", List.of("transmission"));
         return map;
     }
 

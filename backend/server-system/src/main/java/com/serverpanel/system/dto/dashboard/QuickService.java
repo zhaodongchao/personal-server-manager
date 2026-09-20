@@ -20,6 +20,9 @@ public class QuickService {
     /** Web 访问路径前缀 */
     private String path;
 
+    /** 前端图标（如 lucide:gitlab） */
+    private String icon;
+
     /** 是否正在运行 */
     private boolean running;
 }
