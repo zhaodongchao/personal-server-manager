@@ -488,7 +488,8 @@ RestoreBody：`backupFile`（必填，仅允许 `[a-zA-Z0-9_.-].sql`，防路径
 2. 拉信息：`GET /user/info` → 用户信息与角色；
 3. 拉权限码：`GET /auth/codes` → 按钮级控制（`hasAccessByCodes`）；
 4. 拉路由：`GET /menu/all` → `generateRoutesByBackend` 生成动态路由；
-5. 登出：清空本地态 → `POST /auth/logout`。
+5. 偏好同步：路由守卫登录态建立后异步 `GET /user/preference` 应用云端偏好（不阻塞首屏），设置面板变更后防抖 `PUT` 全量保存（见 `src/utils/preference-sync.ts`）；
+6. 登出：清空本地态 → `POST /auth/logout`。
 
 ### 3. 新模块接入步骤
 

@@ -108,6 +108,9 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
 
 export const requestClient = createRequestClient(apiURL, {
   responseReturn: 'data',
+  // 开发环境数据库/Redis 经 SSH 隧道访问远程服务器，单次往返约 1.7s，
+  // 登录等串行多次 IO 的接口耗时可达 10s+，默认 10s 超时会导致请求被中止
+  timeout: 30_000,
 });
 
-export const baseRequestClient = new RequestClient({ baseURL: apiURL });
+export const baseRequestClient = new RequestClient({ baseURL: apiURL, timeout: 30_000 });

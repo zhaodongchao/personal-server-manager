@@ -16,8 +16,8 @@ spring:
     type: com.alibaba.druid.pool.DruidDataSource
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DB:server_panel}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
-    username: ${MYSQL_USER:panel}
-    password: ${MYSQL_PASSWORD:Panel@123456}
+    username: ${MYSQL_USER:zhaodc}
+    password: ${MYSQL_PASSWORD:cJZ-c5aWfMXC6El65KkQJwAX}
     druid:
       initial-size: 2
       min-idle: 5
@@ -36,15 +36,15 @@ spring:
     locations: classpath:db/migration
     baseline-on-migrate: true
     validate-on-migrate: true
-  # MongoDB（偏好设置等文档型存储）。SB4 起连接属性前缀为 spring.mongodb；
-  # 连接串可经 MONGODB_URI 覆盖（默认库名 server_panel，生产注入完整连接串含账号/认证库）
+  # MongoDB（偏好设置等文档型存储）。注意：SB4 起连接属性前缀为 spring.mongodb（不再是 spring.data.mongodb）；
+  # 连接串可经 MONGODB_URI 覆盖（默认库名 server_panel，认证库 admin）
   mongodb:
-    uri: ${MONGODB_URI:mongodb://127.0.0.1:27017/server_panel}
+    uri: ${MONGODB_URI:mongodb://server_panel:um7Z4wk50Dfv5G7BE92xLPDB@127.0.0.1:27017/server_panel?authSource=admin}
   data:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:}
+      password: ${REDIS_PASSWORD:9yXP+AET4sqrh%+J3zB7q*SLWkv5uDj5}
       database: ${REDIS_DB:0}
       lettuce:
         pool:
