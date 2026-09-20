@@ -12,9 +12,6 @@ import java.time.LocalDateTime;
  * 用户偏好设置文档（MongoDB，集合 user_preference）。
  *
  * <p>按用户维度存储前端偏好设置全量 JSON，userId 唯一索引保证一人一档。
- *
- * @author zhaodc
- * @since 2026-09-19
  */
 @Data
 @org.springframework.data.mongodb.core.mapping.Document("user_preference")

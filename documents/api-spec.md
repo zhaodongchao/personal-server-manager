@@ -164,32 +164,31 @@ GET /api/v1/menu/all
 | `meta.hideInMenu` | boolean | 是否隐藏 |
 | `children` | RouteVO[] | 子路由 |
 
-### 8. 偏好设置（存储于 MongoDB）
-
-按用户维度存储前端偏好设置（Vben 偏好面板全量配置，含自定义扩展项），仅要求登录，无需权限码。
+### 8. 偏好设置（按用户维度，存 MongoDB）
 
 ```
-GET  /api/v1/user/preference    # 查询当前用户偏好
-PUT  /api/v1/user/preference    # 保存当前用户偏好（全量覆盖，upsert 一人一档）
+GET /api/v1/user/preference
 ```
 
-响应 `data`（未存储过时为 `null`）：
+无需权限码，仅需登录（与 `/user/info` 一致）。响应 `data`：
 
 | 字段 | 类型 | 说明 |
 | ---- | ---- | ---- |
-| `preferences` | object | Vben preferences 全量对象（主状态） |
-| `custom` | object | 自定义扩展偏好（Vben custom preferences，可空） |
+| `preferences` | object | Vben preferences 全量 JSON（13 组） |
+| `custom` | object | 自定义扩展偏好（4 字段），可空 |
 
-PUT 请求体：
+> 用户从未配置过时，返回**后端写死的默认配置**（`DefaultPreferenceConfig`），恒非空。
 
-```json
-{
-  "preferences": { "theme": { "mode": "dark" }, "app": { } },
-  "custom": { "defaultTableSize": 20, "tenantMode": "single" }
-}
+```
+PUT /api/v1/user/preference
 ```
 
-> 存储位置：MongoDB `server_panel.user_preference` 集合（连接串 `MONGODB_URI` 可覆盖）；`userId` 唯一索引，`updatedAt` 记录最近保存时间。
+请求体（全量覆盖，upsert 一人一档）：
+
+| 字段 | 类型 | 校验 |
+| ---- | ---- | ---- |
+| `preferences` | object | 必填，偏好全量 JSON |
+| `custom` | object | 可选，自定义扩展偏好 |
 
 ## 三、系统管理 `/api/v1/system`
 

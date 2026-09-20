@@ -11,10 +11,11 @@ export interface UserPreference {
 }
 
 /**
- * 获取当前用户偏好设置，未存储过时返回 null
+ * 获取当前用户偏好设置。
+ * 用户从未配置过时返回后端写死的默认配置（恒非空）。
  */
 export async function getUserPreferenceApi() {
-  return requestClient.get<null | UserPreference>('/user/preference');
+  return requestClient.get<UserPreference>('/user/preference');
 }
 
 /**

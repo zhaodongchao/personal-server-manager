@@ -1,7 +1,8 @@
 /**
  * 偏好设置云同步：将 Vben 偏好设置（含自定义扩展项）持久化到 MongoDB。
  *
- * - 登录态建立后调用 {@link initPreferenceSync}：拉取云端偏好并应用（失败静默，本地缓存兜底）；
+ * - 登录态建立后调用 {@link initPreferenceSync}：拉取云端偏好并应用
+ *   （未配置过时后端返回写死的默认配置，恒非空）；
  * - 通过 watch 响应式状态捕获面板变更，防抖后全量保存（快照比对避免远端回显写回）；
  * - localStorage 仍由 Vben PreferenceManager 维护，作为即时缓存，MongoDB 为持久层。
  */
@@ -16,6 +17,7 @@ import {
 import { useDebounceFn } from '@vueuse/core';
 
 import { getUserPreferenceApi, saveUserPreferenceApi } from '#/api';
+import type { UserPreference } from '#/api/preference';
 
 /** 防抖间隔（毫秒） */
 const SAVE_DEBOUNCE_MS = 800;
@@ -33,7 +35,7 @@ function currentSnapshotJson(): string {
   });
 }
 
-function currentSnapshot(): Record<string, any> {
+function currentSnapshot(): UserPreference {
   return JSON.parse(currentSnapshotJson());
 }
 

@@ -13,9 +13,6 @@ import org.springframework.stereotype.Component;
  *
  * <p>启动后执行 ping 命令确认 MongoDB 可达；失败仅告警不阻断启动，
  * 与 Redis/MySQL 的可用性行为解耦（偏好设置等功能降级为不可用）。
- *
- * @author zhaodc
- * @since 2026-09-19
  */
 @Slf4j
 @Component

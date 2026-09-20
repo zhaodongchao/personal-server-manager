@@ -15,10 +15,7 @@ import java.util.Optional;
  *
  * <p>基于 {@link MongoTemplate} 提供集合名维度的基础操作，供各业务模块复用，
  * 避免每个模块各自直接依赖 MongoTemplate。查询条件统一使用 Spring Data 的
- * {@link Query}/{@link Criteria} 构建。
- *
- * @author zhaodc
- * @since 2026-09-19
+ * {@link Query}/{@link org.springframework.data.mongodb.core.query.Criteria} 构建。
  */
 @Component
 @RequiredArgsConstructor

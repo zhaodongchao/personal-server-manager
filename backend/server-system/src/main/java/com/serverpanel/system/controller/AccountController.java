@@ -2,10 +2,12 @@ package com.serverpanel.system.controller;
 
 import com.serverpanel.common.core.R;
 import com.serverpanel.framework.security.LoginHelper;
+import com.serverpanel.system.config.DefaultPreferenceConfig;
 import com.serverpanel.system.dto.auth.PasswordBody;
 import com.serverpanel.system.dto.auth.PreferencesBody;
 import com.serverpanel.system.dto.auth.RouteVO;
 import com.serverpanel.system.dto.auth.UserInfoVO;
+import com.serverpanel.system.entity.mongo.UserPreferenceDocument;
 import com.serverpanel.system.service.AuthService;
 import com.serverpanel.system.service.PermissionService;
 import com.serverpanel.system.service.UserPreferenceService;
@@ -22,7 +24,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 账户相关：用户信息 / 改密 / 动态菜单（Vben Admin 约定路径）。
+ * 账户相关：用户信息 / 改密 / 动态菜单 / 偏好设置（Vben Admin 约定路径）。
  */
 @RestController
 @RequestMapping("/api/v1")
@@ -53,7 +55,8 @@ public class AccountController {
     }
 
     /**
-     * 查询当前用户偏好设置（按用户维度，存 MongoDB）
+     * 查询当前用户偏好设置（按用户维度，存 MongoDB）。
+     * 用户从未配置过时返回后端写死的默认配置。
      */
     @GetMapping("/user/preference")
     public R<Map<String, Object>> preference() {
@@ -65,7 +68,12 @@ public class AccountController {
                 data.put("custom", doc.getCustom());
                 return data;
             })
-            .orElse(null));
+            .orElseGet(() -> {
+                Map<String, Object> data = new LinkedHashMap<>();
+                data.put("preferences", DefaultPreferenceConfig.getDefaultPreferences());
+                data.put("custom", DefaultPreferenceConfig.getDefaultCustom());
+                return data;
+            }));
     }
 
     /**

@@ -6,9 +6,6 @@ import org.bson.Document;
 
 /**
  * 保存用户偏好设置请求体。
- *
- * @author zhaodc
- * @since 2026-09-19
  */
 @Data
 public class PreferencesBody {

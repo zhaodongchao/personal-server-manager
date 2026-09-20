@@ -22,9 +22,6 @@ import java.util.Optional;
  *
  * <p>按用户维度存取前端偏好设置全量 JSON：登录后前端拉取应用，
  * 设置面板变更后防抖保存，upsert 保证一人一档。
- *
- * @author zhaodc
- * @since 2026-09-19
  */
 @Slf4j
 @Service
