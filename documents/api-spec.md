@@ -285,18 +285,32 @@ SysConfig 字段：`configName`、`configKey`、`configValue`、`configType`（Y
 | ---- | ---- | ---- |
 | `hostname` / `os` / `kernel` / `cpuModel` | string | 主机信息 |
 | `cpuPhysicalCores` / `cpuLogicalCores` | number | 核数 |
-| `disks[]` | array | 逻辑文件系统（真实挂载点）`{mount, fsType, totalBytes, usableBytes, usage}`；伪文件系统（proc/sysfs 等）不返回 |
-| `physicalDisks[]` | array | 真实物理磁盘（排除 loop/dm/ram 等虚拟设备）`{name, model, serial, sizeBytes, partitions[]{name,mount,sizeBytes,type(文件系统类型)}}` |
-| `deviceMappers[]` | array | Device Mapper 设备（LVM 逻辑卷映射 / dm-* 等）`{name, sizeBytes, fsType, mount}` |
-| `lvm` | object | LVM 信息 `{physicalVolumes[]{name,vg,sizeBytes,freeBytes}, volumeGroups[]{name,pvCount,lvCount,sizeBytes,freeBytes}, logicalVolumes[]{name,vg,sizeBytes}}`；非 LVM 环境各列表为空 |
+| `disks[]` | array | 真实挂载的文件系统 `{mount, source(源设备,如 /dev/mapper/vg0-root), fsType, vg(所属 LVM 卷组,非 LVM 为空), totalBytes, usableBytes, usage}`；伪文件系统（proc/sysfs/overlay 等）与 loop/ram 源不返回 |
+| `physicalDisks[]` | array | 真实物理磁盘（排除 loop/dm/ram 等虚拟设备）`{name, model, serial, sizeBytes, partitions[]{name,mount,sizeBytes,type(文件系统类型),vg(作为 PV 时所属卷组)}}` |
+| `deviceMappers[]` | array | Device Mapper 设备（LVM 逻辑卷映射 / dm-* 等）`{name(/dev/mapper/vg0-root), vg, sizeBytes, fsType, mount}` |
+| `lvm` | object | LVM 信息 `{physicalVolumes[]{name,vg,sizeBytes,freeBytes}, volumeGroups[]{name,pvCount,lvCount,sizeBytes,freeBytes}, logicalVolumes[]{name(设备映射名 vg0-root),vg,sizeBytes,fsType,mount}}`；非 LVM 环境各列表为空 |
 | `interfaces[]` | array | `{name, ipv4, speed}` |
 | `latest` | MetricFrame | 最新一帧 |
 
-> 上述磁盘/LVM 数据经 `sudo -n -- ...` 执行系统命令采集：
-> `lsblk -J -b`（物理磁盘+分区+Device Mapper+LVM 拓扑）、`findmnt -J -b`（挂载点/文件系统树）、
-> `pvs/vgs/lvs --reportformat json`（PV/VG 明细：PE、容量、可用）。命令受 `CommandExecutor` 白名单约束，
-> 面板进程需具备免密 sudo 权限；sudo 或工具不可用时物理磁盘/文件系统回退 OSHI，
-> LVM 回退 lsblk 拓扑推导（PV/VG/LV），保证展示不为空。
+> 磁盘/LVM 数据采集方式：
+> `lsblk -J -b`（物理磁盘+分区+Device Mapper+LVM 拓扑，普通权限执行）；
+> 挂载点/文件系统直读 `<host-sysroot>/proc/mounts`（容量经 statfs）；
+> `pvs/vgs/lvs --reportformat json`（sudo，PV/VG 明细）。命令受 `CommandExecutor` 白名单约束。
+> LVM 工具或 sudo 不可用时（典型如容器部署）回退 lsblk + sysfs 拓扑推导（dm 设备真名经
+> `/sys/block/dm-*/dm/name`、LVM 判定经 `dm/uuid` 的 `LVM-` 前缀），挂载点/格式化经挂载表回填，保证展示不为空。
+>
+> **容器部署**（面板跑在 Docker 内）需将宿主机根递归挂载进容器并配置 `HOST_SYSROOT`，否则只能看到容器自身的挂载与设备：
+>
+> ```yaml
+> services:
+>   serverpanel:
+>     volumes:
+>       - /:/host            # 宿主机根递归挂载（docker -v 为 rbind，含 /proc /sys /dev）
+>     environment:
+>       HOST_SYSROOT: /host  # 未配置时自动探测 /host、/hostfs、/mnt/host
+> ```
+>
+> 裸机 / systemd 部署无需配置（`host-sysroot` 留空）。
 
 MetricFrame（`/history` 返回数组，WebSocket 推送同构）：
 

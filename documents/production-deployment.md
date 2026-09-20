@@ -167,9 +167,28 @@ journalctl -u serverpanel -f          # 跟踪启动日志
 | `PANEL_TRASH_DIR` | `/var/serverpanel/trash` | 文件回收站目录 |
 | `PANEL_NGINX_CONF_DIR` | `/etc/nginx/panel.d` | 面板托管 Nginx 站点配置目录 |
 | `PANEL_DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker Engine 连接 |
+| `HOST_SYSROOT` | 空 | 容器部署时宿主机根挂载路径（见下文 Docker 部署说明） |
 | `SERVER_ADDRESS` | `0.0.0.0` | 面板监听地址（生产建议 `127.0.0.1`） |
 
 > 修改环境变量后：`sudo systemctl restart serverpanel`。
+
+### Docker 部署的宿主机磁盘可见性
+
+面板以 Docker 容器部署时，容器默认隔离宿主机块设备与挂载表，监控页的物理磁盘 / Device Mapper / LVM / 文件系统将只能看到容器自身视角。需将宿主机根以只读方式递归挂载进容器并设置 `HOST_SYSROOT`：
+
+```bash
+docker run -d --name serverpanel \
+  -p 8080:8080 \
+  -v /:/host:ro \
+  -e HOST_SYSROOT=/host \
+  -e MYSQL_HOST=host.docker.internal \
+  ... serverpanel:latest
+```
+
+- `-v /:/host:ro`：宿主机根只读挂载，面板经其读取宿主机 `/proc/mounts` 与 `/sys` 块设备（磁盘 / LVM / 文件系统拓扑）。
+- `HOST_SYSROOT=/host`：指定挂载路径；未配置时自动探测 `/host`、`/hostfs`、`/mnt/host`。
+- LVM 明细（PV/VG 空间统计）依赖容器内可用的 `pvs/vgs/lvs`，不可用时自动回退 lsblk 拓扑推导。
+- 裸机 / systemd 部署无需配置（`host-sysroot` 留空）。
 
 ## 六、反向代理与 HTTPS（推荐）
 

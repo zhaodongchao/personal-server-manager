@@ -12,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -53,7 +54,7 @@ public class MetricsCollector {
     /** Redis 保留帧数（1 小时 / 5s） */
     private static final long FRAME_RETENTION = 720;
 
-    /** 伪文件系统类型：无真实磁盘占用，文件系统 tree 中不展示（含其子树） */
+    /** 伪文件系统类型：无真实磁盘占用，文件系统中不展示（含其子树） */
     private static final Set<String> PSEUDO_FS = Set.of(
             "proc",
             "sysfs",
@@ -72,7 +73,19 @@ public class MetricsCollector {
             "rpc_pipefs",
             "autofs",
             "tracefs",
-            "efivarfs");
+            "efivarfs",
+            "overlay",
+            "aufs");
+
+    /** 挂载表中跳过的虚拟设备源前缀（loop 镜像 / 内存盘 / 光驱等；dm 与真实磁盘保留） */
+    private static final Set<String> MOUNT_SOURCE_SKIP = Set.of("loop", "ram", "zram", "sr", "fd", "nbd");
+
+    /** 挂载表中跳过的挂载点前缀（容器运行时内部挂载，如 docker overlay2 / 容器 shm） */
+    private static final List<String> MOUNT_TARGET_SKIP = List.of("/var/lib/docker/", "/var/lib/containers/");
+
+    /** 非 LVM 的常见 dm 设备名前缀（dm-crypt / multipath / dmraid），名称推导卷组时排除 */
+    private static final List<String> NON_LVM_DM_PREFIX =
+            List.of("luks", "crypt", "mpath", "isw", "dmraid", "raid", "md-", "lvmcache");
 
     private final SystemInfo systemInfo = new SystemInfo();
     private final StringRedisTemplate redisTemplate;
@@ -80,6 +93,17 @@ public class MetricsCollector {
     private final MonitorWebSocketHandler wsHandler;
     private final MonMetricHourMapper metricHourMapper;
     private final CommandExecutor commandExecutor;
+
+    /**
+     * 宿主机根路径前缀（容器部署用）：将宿主机 / 递归挂载进容器（如 docker run -v /:/host）后，
+     * 通过该前缀读取宿主机的 /proc/mounts 与 /sys 块设备信息，解决容器内看不到
+     * 宿主机挂载表与 LVM 的问题。裸机 / systemd 部署留空。
+     */
+    @Value("${serverpanel.monitor.host-sysroot:}")
+    private String hostSysroot;
+
+    /** sysroot 解析结果缓存（见 {@link #sysroot()}） */
+    private volatile String sysrootCache;
 
     /** 上一帧网络累计字节数与时间戳（速率差分） */
     private long prevNetIn;
@@ -198,15 +222,23 @@ public class MetricsCollector {
         vo.setCpuPhysicalCores(processor.getPhysicalPackageCount());
         vo.setCpuLogicalCores(processor.getLogicalProcessorCount());
 
-        vo.setDisks(collectDisks());
+        // 挂载表（容器部署时读宿主机 <sysroot>/proc/mounts）与块设备拓扑（lsblk --sysroot）
+        Map<String, MountEntry> mounts = loadMounts();
         LsblkData lsblk = loadLsblkData();
         // lsblk 未产出任何物理磁盘/Device Mapper（如权限异常或全部为虚拟设备）时回退 OSHI 硬件扫描
         if (lsblk.physicalDisks.isEmpty() && lsblk.deviceMappers.isEmpty()) {
             fillFromOshi(lsblk, hardware);
         }
+        List<MonitorOverview.DiskInfo> disks = collectDisks(mounts, lsblk.dmAlias);
+        if (disks.isEmpty()) {
+            disks = collectDisksFromOshi();
+        }
+        vo.setDisks(disks);
         vo.setPhysicalDisks(lsblk.physicalDisks);
         vo.setDeviceMappers(lsblk.deviceMappers);
         vo.setLvm(collectLvm(lsblk));
+        // 将挂载点回填到分区 / Device Mapper / 逻辑卷，并补全容器内读不到的文件系统类型
+        applyMounts(vo, mounts, lsblk.dmAlias);
 
         List<MonitorOverview.NetInterface> interfaces = new ArrayList<>();
         for (NetworkIF netif : hardware.getNetworkIFs()) {
@@ -309,57 +341,143 @@ public class MetricsCollector {
         }
     }
 
-    /** 采集挂载的文件系统列表：优先 sudo findmnt（JSON），失败回退 OSHI */
-    private List<MonitorOverview.DiskInfo> collectDisks() {
-        List<MonitorOverview.DiskInfo> fromFindmnt = collectDisksFromFindmnt();
-        return fromFindmnt.isEmpty() ? collectDisksFromOshi() : fromFindmnt;
-    }
+    /** 挂载表条目（源自 <sysroot>/proc/mounts，容器部署时为宿主机真实挂载） */
+    private record MountEntry(String source, String target, String fstype) {}
 
-    /** 通过 sudo findmnt 采集所有真实文件系统挂载点（含树状层级），跳过伪文件系统 */
-    private List<MonitorOverview.DiskInfo> collectDisksFromFindmnt() {
-        try {
-            // findmnt 读取 /proc/mounts，无需 root；不依赖 sudo，避免无免密 sudo 环境下采集为空
-            ExecResult result = commandExecutor.exec("findmnt", "-J", "-b", "-o", "TARGET,FSTYPE,SIZE,AVAIL");
-            if (!result.isSuccess()
-                    || result.getStdout() == null
-                    || result.getStdout().isBlank()) {
-                return List.of();
+    /**
+     * 解析挂载表：直读 <sysroot>/proc/mounts（容器部署时读宿主机挂载表，替代容器内 findmnt）。
+     * 跳过伪文件系统 / 虚拟设备源 / 容器运行时内部挂载；同一挂载点后挂载覆盖先挂载。
+     *
+     * @return target → 挂载条目（保持文件内顺序）
+     */
+    private Map<String, MountEntry> loadMounts() {
+        Map<String, MountEntry> byTarget = new LinkedHashMap<>();
+        String content = readHostFile("/proc/mounts");
+        if (content.isBlank()) {
+            log.warn("读取挂载表失败（{}proc/mounts），文件系统列表将回退 OSHI", sysroot());
+            return byTarget;
+        }
+        for (String line : content.split("\n")) {
+            String[] fields = line.trim().split("\\s+");
+            if (fields.length < 3) {
+                continue;
             }
-            List<MonitorOverview.DiskInfo> list = new ArrayList<>();
-            walkFsTree(objectMapper.readTree(result.getStdout()).path("filesystems"), list);
-            return list.isEmpty() ? List.of() : list;
-        } catch (Exception e) {
-            log.warn("findmnt 采集挂载点失败，回退 OSHI：{}", e.getMessage());
-            return List.of();
+            String source = unescapeMount(fields[0]);
+            String target = unescapeMount(fields[1]);
+            String fstype = fields[2];
+            if (isPseudoFs(fstype) || !source.startsWith("/dev/")) {
+                continue;
+            }
+            String base = source.substring(source.lastIndexOf('/') + 1);
+            if (base.isEmpty() || MOUNT_SOURCE_SKIP.stream().anyMatch(base::startsWith)) {
+                continue;
+            }
+            if (MOUNT_TARGET_SKIP.stream().anyMatch(target::startsWith)) {
+                continue;
+            }
+            byTarget.put(target, new MountEntry(source, target, fstype));
         }
+        return byTarget;
     }
 
-    /** 递归遍历 findmnt JSON 树，聚合所有有挂载点的文件系统，跳过伪文件系统及其子树 */
-    private void walkFsTree(JsonNode node, List<MonitorOverview.DiskInfo> out) {
-        if (node == null || node.isMissingNode() || !node.isObject()) {
-            return;
-        }
-        String fsType = node.path("fstype").asText("");
-        if (isPseudoFs(fsType)) {
-            return;
-        }
-        MonitorOverview.DiskInfo disk = new MonitorOverview.DiskInfo();
-        disk.setMount(node.path("target").asText(""));
-        disk.setFsType(fsType);
-        long total = parseLongVal(node.path("size").asText());
-        long avail = parseLongVal(node.path("avail").asText());
-        disk.setTotalBytes(total);
-        disk.setUsableBytes(avail);
-        disk.setUsage(total <= 0 ? 0 : round2((total - avail) * 100.0 / total));
-        out.add(disk);
-        for (JsonNode child : node.path("children")) {
-            walkFsTree(child, out);
-        }
+    /** 还原 /proc/mounts 中的八进制转义（\040 空格 / \011 制表符 / \134 反斜杠） */
+    private String unescapeMount(String s) {
+        return s.replace("\\040", " ").replace("\\011", "\t").replace("\\134", "\\");
     }
 
     /** 是否伪文件系统（无真实磁盘占用），此类挂载点不展示 */
     private boolean isPseudoFs(String fsType) {
         return fsType == null || PSEUDO_FS.contains(fsType);
+    }
+
+    /**
+     * 宿主机根前缀（解析结果缓存）：显式配置优先；未配置时探测常见宿主机挂载点
+     * （docker run -v /:/host 等），命中则按宿主机视角采集磁盘与文件系统。
+     */
+    private String sysroot() {
+        String cached = sysrootCache;
+        if (cached != null) {
+            return cached;
+        }
+        String sr = hostSysroot == null ? "" : hostSysroot.trim();
+        while (sr.endsWith("/")) {
+            sr = sr.substring(0, sr.length() - 1);
+        }
+        if (sr.isEmpty()) {
+            for (String candidate : new String[] {"/host", "/hostfs", "/mnt/host"}) {
+                if (java.nio.file.Files.exists(java.nio.file.Path.of(candidate, "proc", "mounts"))) {
+                    sr = candidate;
+                    log.info("探测到宿主机根挂载点 {}，磁盘 / 文件系统 / LVM 将按宿主机视角采集", sr);
+                    break;
+                }
+            }
+        }
+        sysrootCache = sr;
+        return sr;
+    }
+
+    /**
+     * 读取宿主机文件：容器部署时优先读 sysroot 前缀路径，失败回退本机路径。
+     *
+     * @param relPath 以 / 开头的绝对路径（如 /proc/mounts、/sys/block/sda/device/model）
+     */
+    private String readHostFile(String relPath) {
+        String sr = sysroot();
+        if (!sr.isEmpty()) {
+            try {
+                String content =
+                        java.nio.file.Files.readString(java.nio.file.Path.of(sr + relPath), StandardCharsets.UTF_8);
+                if (!content.isEmpty()) {
+                    return content;
+                }
+            } catch (Exception ignored) {
+                // 回退本机路径
+            }
+        }
+        try {
+            return java.nio.file.Files.readString(java.nio.file.Path.of(relPath), StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    /** 由挂载表构建文件系统列表：挂载点 / 源设备 / 文件系统类型 / 所属 LVM 卷组 / 容量与使用率 */
+    private List<MonitorOverview.DiskInfo> collectDisks(Map<String, MountEntry> mounts, Map<String, String> dmAlias) {
+        List<MonitorOverview.DiskInfo> list = new ArrayList<>();
+        String sr = sysroot();
+        for (MountEntry m : mounts.values()) {
+            MonitorOverview.DiskInfo disk = new MonitorOverview.DiskInfo();
+            disk.setMount(m.target());
+            disk.setSource(m.source());
+            disk.setFsType(m.fstype());
+            disk.setVg(vgOfMountSource(m, dmAlias));
+            // 容器部署时通过 <sysroot>/<target> 对宿主机文件系统做 statfs
+            File file = new File(sr.isEmpty() ? m.target() : sr + m.target());
+            long total = file.getTotalSpace();
+            long usable = file.getUsableSpace();
+            disk.setTotalBytes(total);
+            disk.setUsableBytes(usable);
+            disk.setUsage(total <= 0 ? 0 : round2((total - usable) * 100.0 / total));
+            list.add(disk);
+        }
+        return list;
+    }
+
+    /** 挂载源对应的 LVM 卷组：/dev/mapper/vg0-root → vg0；dm-N 经 sysfs 别名解析；非 LVM 返回空串 */
+    private String vgOfMountSource(MountEntry m, Map<String, String> dmAlias) {
+        String base = m.source().substring(m.source().lastIndexOf('/') + 1);
+        if (!m.source().startsWith("/dev/mapper/")) {
+            String alias = dmAlias.get(base);
+            if (alias == null) {
+                return "";
+            }
+            base = alias;
+        }
+        if (NON_LVM_DM_PREFIX.stream().anyMatch(base::startsWith)) {
+            return "";
+        }
+        String[] vgLv = splitVgLv(base);
+        return vgLv == null ? "" : vgLv[0];
     }
 
     /** 回退：OSHI 文件系统快照 */
@@ -387,6 +505,8 @@ public class MetricsCollector {
         final List<MonitorOverview.LogicalVolume> logicalVolumes = new ArrayList<>();
         /** VG 聚合临时态（名称 → 统计），遍历结束后转为 volumeGroups */
         final Map<String, VgAgg> vgAgg = new LinkedHashMap<>();
+        /** dm 设备内核名 → 真实映射名（dm-0 → vg0-root），用于挂载源别名匹配 */
+        final Map<String, String> dmAlias = new LinkedHashMap<>();
     }
 
     /** VG 聚合统计（由 lsblk LVM 拓扑推导，用于 pvs/vgs/lvs 不可用时的回退） */
@@ -400,13 +520,29 @@ public class MetricsCollector {
     /** 非真实磁盘的设备名前缀：loop/dm/ram/sr 等虚拟或只读设备不作为物理磁盘展示 */
     private static final Set<String> PHONY_DISK_PREFIX = Set.of("loop", "nbd", "ram", "sr", "fd", "dm", "zram");
 
-    /** 通过 lsblk（JSON）一次性采集物理磁盘、Device Mapper 与 LVM 拓扑数据（无需 sudo） */
+    /** lsblk 输出列（KNAME 用于容器内解析 dm 设备真名） */
+    private static final String LSBLK_COLUMNS = "NAME,KNAME,SIZE,TYPE,FSTYPE,MODEL,SERIAL";
+
+    /**
+     * 通过 lsblk（JSON）一次性采集物理磁盘、Device Mapper 与 LVM 拓扑数据。
+     * 容器部署时加 {@code --sysroot <host>} 读取宿主机块设备（宿主机 / 需挂载进容器）。
+     */
     private LsblkData loadLsblkData() {
         LsblkData data = new LsblkData();
         try {
-            // lsblk 读取 /sys，无需 root；用普通执行而非 sudo，保证无免密 sudo 环境下仍能采集
-            ExecResult result =
-                    commandExecutor.exec("lsblk", "-J", "-b", "-o", "NAME,SIZE,TYPE,FSTYPE,MODEL,SERIAL,MOUNTPOINTS");
+            // lsblk 读取 /sys，无需 root；sysfs 不受容器隔离，容器内也可读到宿主机块设备拓扑
+            ExecResult result;
+            String sr = sysroot();
+            if (sr.isEmpty()) {
+                result = commandExecutor.exec("lsblk", "-J", "-b", "-o", LSBLK_COLUMNS);
+            } else {
+                result = commandExecutor.exec("lsblk", "-J", "-b", "-o", LSBLK_COLUMNS, "--sysroot", sr);
+                if (!result.isSuccess()) {
+                    // lsblk 版本过旧不支持 --sysroot 等：回退普通执行（容器内为容器视角，尽力而为）
+                    log.warn("lsblk --sysroot {} 失败，回退普通 lsblk（输出可能为容器视角）", sr);
+                    result = commandExecutor.exec("lsblk", "-J", "-b", "-o", LSBLK_COLUMNS);
+                }
+            }
             if (!result.isSuccess()
                     || result.getStdout() == null
                     || result.getStdout().isBlank()) {
@@ -425,21 +561,18 @@ public class MetricsCollector {
     /** 递归遍历 lsblk 树节点，分别归类物理磁盘、Device Mapper 与 LVM 拓扑 */
     private void collectLsblkNode(JsonNode node, LsblkData data) {
         String type = node.path("type").asText("");
-        if ("lvm".equals(type)) {
-            // LVM 逻辑卷：既是 Device Mapper 设备，也是 LV 拓扑
-            addLvmNode(node, data);
-        } else if ("dm".equals(type)) {
-            // 独立的 device mapper 设备（非 LVM 逻辑卷，如 dm-crypt/md 等）归入 DM 集合
-            data.deviceMappers.add(buildMapper(node));
+        if ("lvm".equals(type) || "dm".equals(type)) {
+            // dm/lvm 节点统一处理：容器内无 udev 时 type 只有 dm，需从 sysfs 判断是否 LVM
+            addDmNode(node, data);
         } else if ("disk".equals(type)) {
-            // 整盘或分区若挂有 type=lvm 子节点即为物理卷 PV
-            registerPvIfLvmChild(node, data);
+            // 整盘若挂有 dm/lvm 子节点即为物理卷 PV
+            registerPvIfDmChild(node, data);
             if (isRealDisk(node.path("name").asText(""))) {
                 data.physicalDisks.add(buildPhysicalDisk(node));
             }
         } else if ("part".equals(type)) {
-            // 分区可能是物理卷（PV），其 children 挂有 type=lvm 的逻辑卷
-            registerPvIfLvmChild(node, data);
+            // 分区可能是物理卷（PV），其 children 挂有 dm/lvm 的逻辑卷
+            registerPvIfDmChild(node, data);
         }
         JsonNode children = node.path("children");
         if (children.isArray()) {
@@ -449,38 +582,96 @@ public class MetricsCollector {
         }
     }
 
-    /** 解析并登记一个逻辑卷（type=lvm）节点：LV 拓扑 + Device Mapper */
-    private void addLvmNode(JsonNode node, LsblkData data) {
-        String lvName = node.path("name").asText(""); // 形如 vg0-root
+    /**
+     * 解析并登记 dm/lvm 节点：一律作为 Device Mapper 设备；
+     * 确属 LVM 逻辑卷时同时登记 LV 拓扑并累计 VG 容量。
+     */
+    private void addDmNode(JsonNode node, LsblkData data) {
+        String realName = dmRealName(node); // 容器内 name 可能退化为 dm-N，从 sysfs 解析真名
+        String kname = node.path("kname").asText(node.path("name").asText(""));
+        if (!kname.isEmpty() && !kname.equals(realName)) {
+            data.dmAlias.put(kname, realName);
+        }
+        String vg = isLvmDm(node, realName) ? dmVg(realName) : "";
         long size = parseLongVal(node.path("size").asText());
-        String vg = lvVg(lvName);
+        String fstype = node.path("fstype").asText("");
 
-        MonitorOverview.LogicalVolume lv = new MonitorOverview.LogicalVolume();
-        lv.setName(lvName);
-        lv.setVg(vg);
-        lv.setSizeBytes(size);
-        data.logicalVolumes.add(lv);
-
-        data.deviceMappers.add(buildMapper(node));
+        MonitorOverview.DeviceMapper mapper = new MonitorOverview.DeviceMapper();
+        mapper.setName("/dev/mapper/" + realName);
+        mapper.setVg(vg);
+        mapper.setSizeBytes(size);
+        mapper.setFsType(fstype);
+        mapper.setMount("");
+        data.deviceMappers.add(mapper);
 
         if (!vg.isEmpty()) {
+            MonitorOverview.LogicalVolume lv = new MonitorOverview.LogicalVolume();
+            lv.setName(realName);
+            lv.setVg(vg);
+            lv.setSizeBytes(size);
+            lv.setFsType(fstype);
+            lv.setMount("");
+            data.logicalVolumes.add(lv);
+
             VgAgg agg = data.vgAgg.computeIfAbsent(vg, k -> new VgAgg());
             agg.lvSize += size;
             agg.lvCount++;
         }
     }
 
-    /** 若整盘或分区挂有 type=lvm 子节点（即物理卷 PV），登记 PV 并累计所属 VG 的容量 */
-    private void registerPvIfLvmChild(JsonNode node, LsblkData data) {
+    /** 解析 dm 节点的真实设备名：name 为 dm-N（容器内无 udev）时读 sysfs dm/name */
+    private String dmRealName(JsonNode node) {
+        String name = node.path("name").asText("");
+        if (name.matches("dm-\\d+")) {
+            String kname = node.path("kname").asText(name);
+            String sysfsName = readBlockSysfs(kname, "dm", "name");
+            if (!sysfsName.isEmpty()) {
+                return sysfsName;
+            }
+        }
+        return name;
+    }
+
+    /**
+     * 判断 dm 节点是否为 LVM 逻辑卷：type=lvm，或 sysfs dm/uuid 以 LVM- 开头
+     * （容器内 lsblk 无 udev 数据库时的可靠依据）；均不可用时按名称排除法推断。
+     */
+    private boolean isLvmDm(JsonNode node, String realName) {
+        if ("lvm".equals(node.path("type").asText(""))) {
+            return true;
+        }
+        if (realName.matches("dm-\\d+")) {
+            return false; // 未解析出真名的裸内核设备名，无法判定为 LVM
+        }
+        String kname = node.path("kname").asText(node.path("name").asText(""));
+        String uuid = readBlockSysfs(kname, "dm", "uuid");
+        if (uuid.startsWith("LVM-")) {
+            return true;
+        }
+        // 兜底：排除常见非 LVM dm 前缀后，形如 vg-lv 的映射名视为 LVM
+        if (NON_LVM_DM_PREFIX.stream().anyMatch(realName::startsWith)) {
+            return false;
+        }
+        return splitVgLv(realName) != null;
+    }
+
+    /** 若整盘或分区挂有 dm/lvm 子节点（即 LVM 物理卷 PV），登记 PV 并累计所属 VG 容量 */
+    private void registerPvIfDmChild(JsonNode node, LsblkData data) {
         JsonNode children = node.path("children");
         if (!children.isArray()) {
             return;
         }
         String vg = "";
         for (JsonNode child : children) {
-            if ("lvm".equals(child.path("type").asText(""))) {
-                vg = lvVg(child.path("name").asText(""));
-                break;
+            String childType = child.path("type").asText("");
+            if ("lvm".equals(childType) || "dm".equals(childType)) {
+                String realName = dmRealName(child);
+                if (isLvmDm(child, realName)) {
+                    vg = dmVg(realName);
+                    if (!vg.isEmpty()) {
+                        break;
+                    }
+                }
             }
         }
         if (vg.isEmpty()) {
@@ -498,10 +689,43 @@ public class MetricsCollector {
         agg.pvCount++;
     }
 
-    /** LVM 逻辑卷名（形如 vg0-root）推导卷组名：取第一个连字符之前的部分 */
-    private String lvVg(String lvName) {
-        int idx = lvName.indexOf('-');
-        return idx > 0 ? lvName.substring(0, idx) : "";
+    /** LVM 设备映射名（vg0-root）推导卷组名；名称不合法返回空串 */
+    private String dmVg(String dmName) {
+        String[] vgLv = splitVgLv(dmName);
+        return vgLv == null ? "" : vgLv[0];
+    }
+
+    /**
+     * 拆分 LVM 设备映射名为 [vg, lv]。LVM 规则：名称中的连字符转义为 {@code --}，
+     * 卷组与逻辑卷之间以单个 {@code -} 分隔（如 my--vg-root → [my-vg, root]）。
+     * 非 vg-lv 形式（无分隔符）返回 null。
+     */
+    private String[] splitVgLv(String dmName) {
+        if (dmName == null || dmName.isEmpty()) {
+            return null;
+        }
+        StringBuilder vg = new StringBuilder();
+        int i = 0;
+        while (i < dmName.length()) {
+            char c = dmName.charAt(i);
+            if (c == '-') {
+                if (i + 1 < dmName.length() && dmName.charAt(i + 1) == '-') {
+                    vg.append('-'); // 转义的连字符
+                    i += 2;
+                } else {
+                    break; // vg 与 lv 的分隔符
+                }
+            } else {
+                vg.append(c);
+                i++;
+            }
+        }
+        // 分隔符必须存在，且 vg / lv 均非空
+        if (i >= dmName.length() || vg.length() == 0) {
+            return null;
+        }
+        String lv = dmName.substring(i + 1).replace("--", "-");
+        return lv.isEmpty() ? null : new String[] {vg.toString(), lv};
     }
 
     /** 是否为真实物理磁盘（排除 loop/dm/ram 等虚拟设备；兼容有/无 /dev/ 前缀） */
@@ -530,34 +754,25 @@ public class MetricsCollector {
         return s == null || "n/a".equals(s) ? "" : s;
     }
 
-    /** 尝试从 /sys/block/<dev>/device/<attr> 读取磁盘属性（如 model/serial），失败返回空串 */
-    private String readSysfsAttr(String devName, String attr) {
-        try {
-            String base = devName;
-            int slash = base.lastIndexOf('/');
-            if (slash >= 0) {
-                base = base.substring(slash + 1);
-            }
-            byte[] bytes = java.nio.file.Files.readAllBytes(java.nio.file.Path.of("/sys/block", base, "device", attr));
-            return new String(bytes, StandardCharsets.UTF_8).trim();
-        } catch (Exception e) {
-            return "";
-        }
+    /** 尝试读取块设备 sysfs 属性（<sysroot>/sys/block/<dev>/<sub>/<attr>），失败返回空串 */
+    private String readBlockSysfs(String devName, String sub, String attr) {
+        String base = devName.substring(devName.lastIndexOf('/') + 1);
+        return readHostFile("/sys/block/" + base + "/" + sub + "/" + attr).trim();
     }
 
-    /** 由 lsblk 节点构建物理磁盘（仅含真实磁盘及其分区，分区带文件系统类型） */
+    /** 由 lsblk 节点构建物理磁盘（仅含真实磁盘及其分区；分区带文件系统类型与所属 VG） */
     private MonitorOverview.PhysicalDisk buildPhysicalDisk(JsonNode node) {
         MonitorOverview.PhysicalDisk disk = new MonitorOverview.PhysicalDisk();
         String devName = node.path("name").asText("");
         disk.setName("/dev/" + devName);
-        // 优先取 lsblk 的 MODEL/SERIAL，缺失时读取 /sys/block 属性
+        // 优先取 lsblk 的 MODEL/SERIAL，缺失时读取 sysfs 属性（容器内 lsblk 可能读不到）
         String model = nullToEmpty(node.path("model").asText());
         String serial = nullToEmpty(node.path("serial").asText());
         if (model.isEmpty()) {
-            model = readSysfsAttr(devName, "model");
+            model = readBlockSysfs(devName, "device", "model");
         }
         if (serial.isEmpty()) {
-            serial = readSysfsAttr(devName, "serial");
+            serial = readBlockSysfs(devName, "device", "serial");
         }
         disk.setModel(model);
         disk.setSerial(serial);
@@ -573,7 +788,9 @@ public class MetricsCollector {
                 p.setName("/dev/" + child.path("name").asText());
                 p.setSizeBytes(parseLongVal(child.path("size").asText()));
                 p.setType(child.path("fstype").asText(""));
-                p.setMount(firstMount(child.path("mountpoints")));
+                // 分区作为 LVM 物理卷时，从其 dm 子节点推导所属卷组
+                p.setVg(childDmVg(child));
+                p.setMount("");
                 parts.add(p);
             }
         }
@@ -581,22 +798,18 @@ public class MetricsCollector {
         return disk;
     }
 
-    /** 由 lsblk 节点构建 Device Mapper 设备 */
-    private MonitorOverview.DeviceMapper buildMapper(JsonNode node) {
-        MonitorOverview.DeviceMapper mapper = new MonitorOverview.DeviceMapper();
-        mapper.setName("/dev/" + node.path("name").asText());
-        mapper.setSizeBytes(parseLongVal(node.path("size").asText()));
-        mapper.setFsType(node.path("fstype").asText(""));
-        mapper.setMount(firstMount(node.path("mountpoints")));
-        return mapper;
-    }
-
-    /** 取 lsblk mountpoints 数组第一个非空挂载点，无则空串 */
-    private String firstMount(JsonNode mountpoints) {
-        if (mountpoints.isArray()) {
-            for (JsonNode m : mountpoints) {
-                if (!m.isNull() && !m.asText().isEmpty()) {
-                    return m.asText();
+    /** 取节点下第一个 LVM dm 子节点对应的卷组名（非 PV 返回空串） */
+    private String childDmVg(JsonNode node) {
+        JsonNode children = node.path("children");
+        if (!children.isArray()) {
+            return "";
+        }
+        for (JsonNode child : children) {
+            String childType = child.path("type").asText("");
+            if ("lvm".equals(childType) || "dm".equals(childType)) {
+                String realName = dmRealName(child);
+                if (isLvmDm(child, realName)) {
+                    return dmVg(realName);
                 }
             }
         }
@@ -633,17 +846,17 @@ public class MetricsCollector {
         return mapper;
     }
 
-    /** 由 OSHI 构建真实物理磁盘（型号/序列号缺失时尝试 /sys/block 读取） */
+    /** 由 OSHI 构建真实物理磁盘（型号/序列号缺失时尝试 sysfs 读取） */
     private MonitorOverview.PhysicalDisk buildPhysicalDiskFromOshi(HWDiskStore store) {
         MonitorOverview.PhysicalDisk disk = new MonitorOverview.PhysicalDisk();
         disk.setName(store.getName());
         String model = nullToEmpty(store.getModel());
         String serial = nullToEmpty(store.getSerial());
         if (model.isEmpty()) {
-            model = readSysfsAttr(store.getName(), "model");
+            model = readBlockSysfs(store.getName(), "device", "model");
         }
         if (serial.isEmpty()) {
-            serial = readSysfsAttr(store.getName(), "serial");
+            serial = readBlockSysfs(store.getName(), "device", "serial");
         }
         disk.setModel(model);
         disk.setSerial(serial);
@@ -655,10 +868,69 @@ public class MetricsCollector {
             p.setMount(part.getMountPoint() == null ? "" : part.getMountPoint());
             p.setSizeBytes(part.getSize());
             p.setType(part.getType());
+            p.setVg("");
             parts.add(p);
         }
         disk.setPartitions(parts.isEmpty() ? List.of() : parts);
         return disk;
+    }
+
+    /**
+     * 将挂载表回填到分区 / Device Mapper / 逻辑卷：按挂载源设备名匹配
+     * （含 dm-0 内核名 → vg0-root 映射名别名），并补全容器内读不到的文件系统类型。
+     */
+    private void applyMounts(MonitorOverview vo, Map<String, MountEntry> mounts, Map<String, String> dmAlias) {
+        if (mounts.isEmpty()) {
+            return;
+        }
+        // 挂载源 basename → 挂载条目（同一源多处挂载取第一处）
+        Map<String, MountEntry> bySource = new LinkedHashMap<>();
+        for (MountEntry m : mounts.values()) {
+            String base = m.source().substring(m.source().lastIndexOf('/') + 1);
+            bySource.putIfAbsent(base, m);
+        }
+        if (vo.getPhysicalDisks() != null) {
+            for (MonitorOverview.PhysicalDisk disk : vo.getPhysicalDisks()) {
+                for (MonitorOverview.Partition p : disk.getPartitions()) {
+                    applyMount(p.getName(), bySource, dmAlias, p::setMount, p::setType);
+                }
+            }
+        }
+        if (vo.getDeviceMappers() != null) {
+            for (MonitorOverview.DeviceMapper dm : vo.getDeviceMappers()) {
+                applyMount(dm.getName(), bySource, dmAlias, dm::setMount, dm::setFsType);
+            }
+        }
+        if (vo.getLvm() != null && vo.getLvm().getLogicalVolumes() != null) {
+            for (MonitorOverview.LogicalVolume lv : vo.getLvm().getLogicalVolumes()) {
+                applyMount(lv.getName(), bySource, dmAlias, lv::setMount, lv::setFsType);
+            }
+        }
+    }
+
+    /** 按设备名（含 dm 内核名别名）匹配挂载条目，命中则回填挂载点与缺失的文件系统类型 */
+    private void applyMount(
+            String deviceName,
+            Map<String, MountEntry> bySource,
+            Map<String, String> dmAlias,
+            java.util.function.Consumer<String> mountSetter,
+            java.util.function.Consumer<String> fsTypeSetter) {
+        if (deviceName == null || deviceName.isEmpty()) {
+            return;
+        }
+        String base = deviceName.substring(deviceName.lastIndexOf('/') + 1);
+        MountEntry m = bySource.get(base);
+        if (m == null) {
+            String alias = dmAlias.get(base);
+            if (alias != null) {
+                m = bySource.get(alias);
+            }
+        }
+        if (m != null) {
+            mountSetter.accept(m.target());
+            // 容器内 lsblk 常读不到超级块（fstype 为空），用挂载表补全
+            fsTypeSetter.accept(m.fstype());
+        }
     }
 
     /** 采集 LVM 信息：优先 pvs/vgs/lvs（含 PE/空间明细），工具或 sudo 不可用时回退 lsblk 拓扑 */
@@ -753,17 +1025,27 @@ public class MetricsCollector {
         return list.isEmpty() ? List.of() : list;
     }
 
-    /** 解析 LV 逻辑卷（名称 / 卷组 / 大小） */
+    /** 解析 LV 逻辑卷（名称统一为设备映射名 vg-lv / 卷组 / 大小） */
     private List<MonitorOverview.LogicalVolume> parseLvs() {
         List<MonitorOverview.LogicalVolume> list = new ArrayList<>();
         for (JsonNode r : runLvmJson("lvs", "lv_name,vg_name,lv_size")) {
+            String vg = r.path("vg_name").asText();
+            String lvName = r.path("lv_name").asText();
             MonitorOverview.LogicalVolume lv = new MonitorOverview.LogicalVolume();
-            lv.setName(r.path("lv_name").asText());
-            lv.setVg(r.path("vg_name").asText());
+            // 组合为设备映射名（vg0-root），与挂载源 /dev/mapper/vg0-root 对齐；连字符按 LVM 规则转义
+            lv.setName(escapeLvmName(vg) + "-" + escapeLvmName(lvName));
+            lv.setVg(vg);
             lv.setSizeBytes(parseLongVal(r.path("lv_size").asText()));
+            lv.setFsType("");
+            lv.setMount("");
             list.add(lv);
         }
         return list.isEmpty() ? List.of() : list;
+    }
+
+    /** LVM 名称转义：卷组/逻辑卷名中的连字符在设备映射名中写作 -- */
+    private String escapeLvmName(String s) {
+        return s == null ? "" : s.replace("-", "--");
     }
 
     /** 安全解析 lvm 输出的字节数（可能含小数），失败归 0 */

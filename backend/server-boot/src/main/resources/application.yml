@@ -95,9 +95,11 @@ serverpanel:
   login:
     max-fail: 5
     lock-minutes: 15
-  # 监控采集间隔（秒）
+  # 监控采集间隔（秒）；host-sysroot：容器部署时宿主机根挂载路径（如 -v /:/host 后设 /host），
+  # 用于读取宿主机挂载表与块设备（磁盘/LVM/文件系统），裸机部署留空（未配置时自动探测 /host、/hostfs、/mnt/host）
   monitor:
     interval-seconds: 5
+    host-sysroot: ${HOST_SYSROOT:}
   # 命令执行
   command:
     timeout-seconds: 30

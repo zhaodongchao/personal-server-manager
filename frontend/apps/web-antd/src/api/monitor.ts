@@ -20,8 +20,13 @@ export namespace MonitorApi {
   }
 
   export interface DiskInfo {
+    /** 挂载点 */
     mount: string;
+    /** 挂载源设备，如 /dev/mapper/vg0-root */
+    source: string;
     fsType: string;
+    /** 所属 LVM 卷组（非 LVM 挂载为空串） */
+    vg: string;
     totalBytes: number;
     usableBytes: number;
     usage: number;
@@ -41,11 +46,15 @@ export namespace MonitorApi {
     mount: string;
     sizeBytes: number;
     type: string;
+    /** 分区作为 LVM 物理卷时所属卷组（非 PV 为空串） */
+    vg: string;
   }
 
   /** Device Mapper 设备（LVM 逻辑卷映射 / dm-* 等） */
   export interface DeviceMapper {
     name: string;
+    /** 所属 LVM 卷组（非 LVM 设备为空串） */
+    vg: string;
     sizeBytes: number;
     fsType: string;
     mount: string;
@@ -74,9 +83,14 @@ export namespace MonitorApi {
   }
 
   export interface LvmLogicalVolume {
+    /** 设备映射名，如 vg0-root（对应 /dev/mapper/vg0-root） */
     name: string;
     vg: string;
     sizeBytes: number;
+    /** 文件系统类型（未格式化为空串） */
+    fsType: string;
+    /** 挂载点（未挂载为空串） */
+    mount: string;
   }
 
   export interface NetInterface {
