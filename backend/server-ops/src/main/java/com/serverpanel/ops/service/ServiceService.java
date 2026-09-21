@@ -651,36 +651,70 @@ public class ServiceService {
         return map;
     }
 
+    /**
+     * 模板单元：`@` 后没有实例名（如 {@code autovt@.service}、{@code getty@.service}）。
+     *
+     * <p>它在 {@code systemctl list-unit-files} 里是合法条目（本机 226 个 .service 中有 22 个），
+     * 却<b>不能</b>被 {@code systemctl show} 查询。模板单元本就没有运行时状态，
+     * 故不参与批量查询，只保留清单条目本身。
+     */
+    private static final Pattern TEMPLATE_UNIT = Pattern.compile("^[^@]+@\\.service$");
+
     /** 批量取实时字段：分片调用 systemctl show，块间以空行分隔，用 Id 字段对齐 unit */
     private Map<String, Map<String, String>> showMany(List<String> names) {
+        List<String> targets = new ArrayList<>(names.size());
+        for (String name : names) {
+            if (!TEMPLATE_UNIT.matcher(name).matches()) {
+                targets.add(name);
+            }
+        }
         Map<String, Map<String, String>> result = new LinkedHashMap<>();
-        for (int i = 0; i < names.size(); i += SHOW_CHUNK_SIZE) {
-            List<String> chunk = names.subList(i, Math.min(i + SHOW_CHUNK_SIZE, names.size()));
-            Map<String, Object> args = new LinkedHashMap<>();
-            args.put("units", chunk);
-            args.put("properties", LIST_PROPERTIES);
-            HostResult study;
-            try {
-                study = hostChannel.call("service.show", args, "读取服务实时状态", 90);
-            } catch (RuntimeException e) {
-                log.warn("批量读取服务状态失败（分片 {}）：{}", i / SHOW_CHUNK_SIZE, e.getMessage());
-                continue;
-            }
-            Map<String, String> block = new LinkedHashMap<>();
-            for (String line : study.text().split("\n")) {
-                if (line.isBlank()) {
-                    flushBlock(result, block);
-                    block = new LinkedHashMap<>();
-                    continue;
-                }
-                int eq = line.indexOf('=');
-                if (eq > 0) {
-                    block.put(line.substring(0, eq), line.substring(eq + 1));
-                }
-            }
-            flushBlock(result, block);
+        for (int i = 0; i < targets.size(); i += SHOW_CHUNK_SIZE) {
+            showChunk(new ArrayList<>(
+                    targets.subList(i, Math.min(i + SHOW_CHUNK_SIZE, targets.size()))), result);
         }
         return result;
+    }
+
+    /**
+     * 取一批 unit 的实时属性；<b>整批失败时二分下探到单个 unit</b>。
+     *
+     * <p>为什么必须二分：{@code systemctl show} 只要遇到一个它拒绝的 unit 名就整体退出
+     * （exitCode != 0）并丢弃剩余输出，一次坏名会连带丢掉同批几十个单元的数据。
+     * 前置过滤已挡掉已知的模板单元，但 systemd 将来仍可能因其它原因拒绝（临时故障、
+     * 权限变化、新增的异形单元名）。二分重试把影响面从「整片」压缩到「单个单元」，
+     * 代价仅为 k·log₂(n) 次额外调用（k = 坏名个数），每次调用耗时毫秒级。
+     */
+    private void showChunk(List<String> chunk, Map<String, Map<String, String>> result) {
+        Map<String, Object> args = new LinkedHashMap<>();
+        args.put("units", chunk);
+        args.put("properties", LIST_PROPERTIES);
+        HostResult study;
+        try {
+            study = hostChannel.call("service.show", args, "读取服务实时状态", 90);
+        } catch (RuntimeException e) {
+            log.warn("批量读取服务状态失败（{} 个单元）：{}", chunk.size(), e.getMessage());
+            return;
+        }
+        if (study.getExitCode() != 0 && chunk.size() > 1) {
+            int mid = chunk.size() / 2;
+            showChunk(new ArrayList<>(chunk.subList(0, mid)), result);
+            showChunk(new ArrayList<>(chunk.subList(mid, chunk.size())), result);
+            return;
+        }
+        Map<String, String> block = new LinkedHashMap<>();
+        for (String line : study.text().split("\n")) {
+            if (line.isBlank()) {
+                flushBlock(result, block);
+                block = new LinkedHashMap<>();
+                continue;
+            }
+            int eq = line.indexOf('=');
+            if (eq > 0) {
+                block.put(line.substring(0, eq), line.substring(eq + 1));
+            }
+        }
+        flushBlock(result, block);
     }
 
     private void flushBlock(Map<String, Map<String, String>> target, Map<String, String> block) {
