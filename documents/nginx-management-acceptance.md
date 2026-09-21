@@ -3,7 +3,8 @@
 > 项目：personal-server-manager（ServerPanel）· 运维工具 → Nginx 管理
 > 范围：S1 实例探测/状态/既有站点只读 · S2 站点/上游/四层转发/日志/回滚/危险确认 · S3 ACME（HTTP-01 + DNS-01 两步 + 每日续期调度）· S4 文档/端到端/收尾
 > 日期：2026-09-21　作者：zhaodc
-> 部署：后端 #92（`4ad3ae2`）· 前端 #93（`506815d`，镜像 `psm-frontend:master-b93-506815d` / `psm-backend:master-b93-506815d`）
+> 部署：Jenkins **#94** `master-b94-3095d7e`（后端 + 前端均构建，be/fe healthy）
+> （过程版本：后端 #92 `4ad3ae2` · 前端 #93 `506815d` · ID 修复 #94 `f33ed87`）
 
 ---
 
@@ -73,6 +74,10 @@
 | 8 | 删除实例 | http=200 ✅ |
 
 > 写入链路全程经宿主通道真实执行 `nginx -t` / `reload`，并在结束后回滚+删实例，现场无残留。
+
+**修复后回归（#94 部署后重跑）**：同上 9 项 **9/9 PASS**（`nginx -t` + reload + 回滚 + 删实例全通），
+确认「ID 序列化改字符串」未破坏写链路；CDP 复验同时确认页面请求的 `instanceId` 已是完整的
+`2102014067671138305`，状态卡显示 `nginx 1.30.4 / 配置校验 通过 / certbot 2.1.0`。
 
 **前端产物确认**：运行容器 `psm-frontend:master-b93-506815d` 的 `CertDrawer-fxlCwhxF.js` 含「验证并签发」、`api-BcXyY__C.js` 含 `dns-verify` —— **S3 前端确实已部署到浏览器端**。
 

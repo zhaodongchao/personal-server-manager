@@ -87,3 +87,27 @@
 - **根因**：DNS 传播是异步的，certbot 在认证钩子里阻塞等待 TXT 生效；面板若同步等待会卡死 HTTP 请求。
 - **修正**：拆成两步——`issue` 只启动 certbot 并立即返回需添加的 TXT 记录名/值（状态置 `pending`）；用户添加后调 `dns-verify`，后端写 `.ready` 唤醒钩子并轮询 `acmeStatus` 直至签发（最长约 5 分钟）。前端 `certId` 经 `NginxActionResult.changeId` 回传（复用字段，注意语义）。
 - **教训**：任何依赖外部异步传播（DNS/邮件/第三方回调）的 ACME/验证流程，后端都不要同步阻塞 HTTP；用「发起→返回凭证→回调/轮询」的两段式，前端配 loading + 状态轮询。
+
+### 10. 雪花 ID 必须序列化为字符串，否则前端回传的 id 是错的
+- **现象**：Nginx 管理页状态卡显示 `nginx 版本 -`、`配置校验 未知`；但用 Python 直接打
+  `GET /ops/nginx/status` 却返回 `nginxVersion=1.30.4 / configValid=true`。
+- **根因**：`IdType.ASSIGN_ID` 生成的雪花 ID 是 19 位（`2.1e18`），远超
+  `Number.MAX_SAFE_INTEGER`（`9.007e15`）。后端以 JSON **数字**输出 → 浏览器 `JSON.parse`
+  后精度丢失，实测 `2102014067671138305` → `2102014067671138300` → 前端回传的
+  `instanceId` 查不到记录 → 后端返回 `instanceExists=false` 的降级状态。
+- **修正**：对外返回的 `id / instanceId / certId / jobId / changeId` 加
+  `@JsonSerialize(using = ToStringSerializer.class)`；请求侧不用改（字符串 → Long 反序列化天然可行）。
+  本项目是 **Jackson 3**，包名是 `tools.jackson.databind.annotation.JsonSerialize` +
+  `tools.jackson.databind.ser.std.ToStringSerializer`（**不是** `com.fasterxml.*`）。
+  `OpsCronJob` 的 `id` 继承自全局基类 `BaseEntity`（`sys_user`/`sys_menu` 等 10 个实体共用），
+  **不能改基类**，改为在子类里 **getter 覆写**加注解，避免波及小 ID 实体。
+- **教训**：**凡是要经前端回传的雪花 ID，一律序列化为字符串**。写接口测试（Python/Go）能保留精度，
+  永远发现不了这个缺陷——它只在浏览器里出现。
+
+### 11. 接口全绿 ≠ 页面可用：验收必须开真实浏览器并抓网络面板
+- **现象**：Nginx 模块端到端接口验收 20/20 PASS，但真实浏览器打开页面是降级状态、所有写操作都会失败。
+- **根因**：接口测试与页面请求的参数不同（ID 精度、鉴权头、默认参数），「接口能用」无法证明「页面会用」。
+- **修正**：用 CDP 挂 `Network` 域，抓 `Network.responseReceived` + `Network.getResponseBody`，
+  把「页面实际发出的 URL / 拿到的响应」与「直接调接口的结果」逐字段对比。
+- **教训**：**交付前至少开一次真实浏览器**，且要看网络面板而不是只看 DOM；
+  DOM 只能证明「渲染了」，网络面板才能证明「请求对了」。
