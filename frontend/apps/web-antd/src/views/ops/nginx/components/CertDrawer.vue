@@ -31,6 +31,7 @@ import {
 
 import {
   deleteNginxCertApi,
+  dnsVerifyNginxCertApi,
   getNginxCertPageApi,
   issueNginxCertApi,
   renewNginxCertApi,
@@ -56,6 +57,8 @@ const emit = defineEmits<{
 
 interface CertForm {
   type: 'letsencrypt' | 'custom';
+  /** letsencrypt 下生效：http01 / dns01（通配符） */
+  mode: 'http01' | 'dns01';
   domain: string;
   email: string;
   autoRenew: boolean;
@@ -63,9 +66,16 @@ interface CertForm {
   keyContent: string;
 }
 
+interface DnsPending {
+  certId: string;
+  name: string;
+  value: string;
+}
+
 function blank(): CertForm {
   return {
     type: 'letsencrypt',
+    mode: 'http01',
     domain: '',
     email: '',
     autoRenew: true,
@@ -82,6 +92,19 @@ const saving = ref(false);
 
 const dangerOpen = ref(false);
 const dangerTarget = ref<NginxApi.NginxCert | null>(null);
+
+/** DNS-01 两步流：首步返回 TXT 后等待用户添加，期间展示验证按钮 */
+const dnsPending = ref<DnsPending | null>(null);
+const verifying = ref(false);
+
+async function copyText(text: string, label: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    message.success(`${label}已复制`);
+  } catch {
+    message.warning('复制失败，请手动选择复制');
+  }
+}
 
 async function load() {
   loading.value = true;
@@ -103,6 +126,7 @@ watch(
     if (!open) return;
     editing.value = false;
     form.value = blank();
+    dnsPending.value = null;
     void load();
   },
 );
@@ -115,6 +139,7 @@ function createNew() {
 function cancelEdit() {
   editing.value = false;
   form.value = blank();
+  dnsPending.value = null;
 }
 
 async function submit() {
@@ -130,9 +155,20 @@ async function submit() {
         instanceId: props.instanceId,
         domain,
         email: form.value.email.trim() || undefined,
-        mode: 'http01',
+        mode: form.value.mode,
         autoRenew: form.value.autoRenew ? 1 : 0,
       });
+      if (form.value.mode === 'dns01' && res?.dnsTxtName) {
+        // 两步流：停留在编辑态，展示需添加的 TXT 记录，等待用户点击「验证并签发」
+        dnsPending.value = {
+          certId: (res?.changeId as unknown as string) ?? '',
+          name: res.dnsTxtName,
+          value: res.dnsTxtValue ?? '',
+        };
+        message.info(res?.message ?? '请添加 TXT 记录后点击「验证并签发」');
+        saving.value = false;
+        return;
+      }
       message.success(res?.message ?? `证书「${domain}」申请成功`);
     } else {
       if (!form.value.certContent.trim() || !form.value.keyContent.trim()) {
@@ -156,11 +192,45 @@ async function submit() {
   }
 }
 
+/** DNS-01 二步：用户添加 TXT 后唤醒 certbot 完成签发（后端轮询 acmeStatus，最长约 5 分钟） */
+async function verifyDns() {
+  if (!dnsPending.value) return;
+  verifying.value = true;
+  try {
+    const res = await dnsVerifyNginxCertApi(dnsPending.value.certId);
+    message.success(res?.message ?? '通配符证书已签发成功');
+    dnsPending.value = null;
+    editing.value = false;
+    form.value = blank();
+    await load();
+    emit('changed');
+  } catch (e) {
+    message.error('签发未成功，请确认 TXT 已生效（DNS 全球生效可能需数分钟）后重试');
+  } finally {
+    verifying.value = false;
+  }
+}
+
 async function renew(c: NginxApi.NginxCert) {
   const res = await renewNginxCertApi(c.id as string);
   message.success(res?.message ?? `证书「${c.domain}」续期成功`);
   await load();
   emit('changed');
+}
+
+/** 对处于 pending 的 DNS-01 证书再次唤醒验证（用户已添加 TXT 后） */
+async function resumeVerify(c: NginxApi.NginxCert) {
+  verifying.value = true;
+  try {
+    const res = await dnsVerifyNginxCertApi(c.id as string);
+    message.success(res?.message ?? '通配符证书已签发成功');
+    await load();
+    emit('changed');
+  } catch (e) {
+    message.error('签发未成功，请确认 TXT 已生效（DNS 全球生效可能需数分钟）后重试');
+  } finally {
+    verifying.value = false;
+  }
 }
 
 function askDelete(c: NginxApi.NginxCert) {
@@ -232,7 +302,15 @@ const columns = [
             <template v-else-if="column.dataIndex === 'actions'">
               <Space v-if="canWrite" :size="0">
                 <Button
-                  v-if="(record as NginxApi.NginxCert).type === 'letsencrypt'"
+                  v-if="(record as NginxApi.NginxCert).status === 'pending'"
+                  size="small"
+                  type="link"
+                  @click="resumeVerify(record as NginxApi.NginxCert)"
+                >
+                  继续验证
+                </Button>
+                <Button
+                  v-else-if="(record as NginxApi.NginxCert).type === 'letsencrypt'"
                   size="small"
                   type="link"
                   @click="renew(record as NginxApi.NginxCert)"
@@ -272,20 +350,83 @@ const columns = [
           </Form.Item>
 
           <template v-if="form.type === 'letsencrypt'">
-            <Alert
-              class="mb-3"
-              message="HTTP-01 通过 webroot 校验申请；DNS-01（通配符）将在后续版本开放。"
-              show-icon
-              type="info"
-            />
-            <div class="flex items-start gap-2">
-              <Form.Item class="flex-1" label="联系邮箱">
+            <Form.Item label="申请方式">
+              <Radio.Group v-model:value="form.mode" :disabled="!!dnsPending">
+                <Radio value="http01">HTTP-01（Webroot，单域名）</Radio>
+                <Radio value="dns01">DNS-01（通配符 *.example.com）</Radio>
+              </Radio.Group>
+            </Form.Item>
+
+            <template v-if="form.mode === 'http01'">
+              <Alert
+                class="mb-3"
+                message="HTTP-01 通过 webroot 校验申请，需 80 端口可访问；适合普通单域名。"
+                show-icon
+                type="info"
+              />
+              <div class="flex items-start gap-2">
+                <Form.Item class="flex-1" label="联系邮箱">
+                  <Input v-model:value="form.email" placeholder="admin@example.com" />
+                </Form.Item>
+                <Form.Item label="自动续期">
+                  <Switch v-model:checked="form.autoRenew" />
+                </Form.Item>
+              </div>
+            </template>
+
+            <template v-else>
+              <Alert
+                class="mb-3"
+                message="DNS-01 用于通配符证书，需在 DNS 服务商添加一条 TXT 记录完成校验；适合 *.example.com。"
+                show-icon
+                type="info"
+              />
+              <Form.Item label="联系邮箱">
                 <Input v-model:value="form.email" placeholder="admin@example.com" />
               </Form.Item>
               <Form.Item label="自动续期">
                 <Switch v-model:checked="form.autoRenew" />
               </Form.Item>
-            </div>
+
+              <template v-if="dnsPending">
+                <Alert
+                  :message="`请在 DNS 添加以下 TXT 记录，然后点击「验证并签发」：${dnsPending.name}`"
+                  show-icon
+                  type="warning"
+                />
+                <div class="mb-2 rounded border border-dashed border-gray-300 p-3">
+                  <div class="mb-1 text-xs text-gray-500">记录类型：TXT</div>
+                  <div class="mb-1 flex items-center justify-between">
+                    <span class="text-xs text-gray-500">主机记录</span>
+                    <Button
+                      size="small"
+                      type="link"
+                      @click="copyText(dnsPending.name, '主机记录')"
+                    >
+                      复制
+                    </Button>
+                  </div>
+                  <code class="block break-all text-sm">{{ dnsPending.name }}</code>
+                  <div class="mb-1 mt-2 flex items-center justify-between">
+                    <span class="text-xs text-gray-500">记录值</span>
+                    <Button
+                      size="small"
+                      type="link"
+                      @click="copyText(dnsPending.value, '记录值')"
+                    >
+                      复制
+                    </Button>
+                  </div>
+                  <code class="block break-all text-sm">{{ dnsPending.value }}</code>
+                </div>
+                <Space>
+                  <Button :loading="verifying" type="primary" @click="verifyDns">
+                    验证并签发
+                  </Button>
+                  <Button :disabled="verifying" @click="cancelEdit">取消</Button>
+                </Space>
+              </template>
+            </template>
           </template>
 
           <template v-else>
@@ -306,7 +447,7 @@ const columns = [
           </template>
         </Form>
 
-        <Space>
+        <Space v-if="!dnsPending">
           <Button :loading="saving" type="primary" @click="submit">提交</Button>
           <Button @click="cancelEdit">返回列表</Button>
         </Space>

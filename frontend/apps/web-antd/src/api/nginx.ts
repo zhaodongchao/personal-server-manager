@@ -301,9 +301,13 @@ export namespace NginxApi {
     diff?: string;
     /** 是否已记录可回滚快照 */
     rollbackable?: boolean;
-    /** 变更记录 ID */
+    /** 变更记录 ID（DNS-01 签发时此处携带证书 ID，用于后续 verify 调用） */
     changeId?: string;
     message?: string;
+    /** DNS-01 两步流：需在 DNS 添加的 TXT 记录名（如 _acme-challenge.example.com） */
+    dnsTxtName?: string;
+    /** DNS-01 两步流：需在 DNS 添加的 TXT 记录值 */
+    dnsTxtValue?: string;
   }
 }
 
@@ -517,6 +521,13 @@ export async function deleteNginxCertApi(id: string, confirm?: string) {
     method: 'DELETE',
     data: { confirm },
   });
+}
+
+/** DNS-01 二步：用户添加 TXT 后唤醒 certbot 完成签发（后端轮询 acmeStatus 直至成功） */
+export async function dnsVerifyNginxCertApi(id: string) {
+  return requestClient.post<NginxApi.NginxActionResult>(
+    `/ops/nginx/cert/${id}/dns-verify`,
+  );
 }
 
 // ==================== 日志 ====================
