@@ -1,18 +1,27 @@
 import { requestClient } from '#/api/request';
 
 export namespace UserApi {
+  /** 用户列表项：刻意不含头像（头像为 base64 大字段，列表接口不返回） */
   export interface SysUser {
     id: string;
     username: string;
     nickname: string;
+    gender?: number;
     email?: string;
     phone?: string;
-    avatar?: string;
     status: number;
     lastLoginAt?: string;
     lastLoginIp?: string;
     createdAt: string;
     updatedAt: string;
+  }
+
+  /** 用户详情：在列表字段基础上补充头像，供编辑弹窗回显 */
+  export interface SysUserDetail extends SysUser {
+    /** 原始值：null / preset:N / data:image/...;base64,... */
+    avatar?: null | string;
+    /** 归一化后的可渲染 src */
+    avatarUrl?: string;
   }
 
   export interface UserBody {
@@ -21,6 +30,10 @@ export namespace UserApi {
     password?: string;
     email?: string;
     phone?: string;
+    /** 性别 0未知 1男 2女 */
+    gender?: number;
+    /** null=不修改；''=恢复默认；preset:N / data:image/...;base64,...=设定 */
+    avatar?: null | string;
     status?: number;
     roleIds?: string[];
   }
@@ -38,7 +51,7 @@ export async function getUserPageApi(params: {
 
 /** 用户详情 */
 export async function getUserApi(id: string) {
-  return requestClient.get<UserApi.SysUser>(`/system/user/${id}`);
+  return requestClient.get<UserApi.SysUserDetail>(`/system/user/${id}`);
 }
 
 /** 用户已绑定角色 */

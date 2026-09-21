@@ -66,6 +66,7 @@ import { IconifyIcon } from '@vben/icons';
 import { $t } from '@vben/locales';
 import { isEmpty } from '@vben/utils';
 
+import AvatarPicker from '#/components/avatar-picker/index.vue';
 import { savePreferencesNow } from '#/utils/preference-sync';
 
 import { message, Modal, notification } from 'ant-design-vue';
@@ -604,6 +605,7 @@ export type ComponentType =
   | 'ApiSelect'
   | 'ApiTreeSelect'
   | 'AutoComplete'
+  | 'AvatarPicker'
   | 'Cascader'
   | 'Checkbox'
   | 'CheckboxGroup'
@@ -637,6 +639,7 @@ export interface ComponentPropsMap {
   ApiSelect: ApiComponentSharedProps & SelectProps;
   ApiTreeSelect: ApiComponentSharedProps & TreeSelectProps;
   AutoComplete: AutoCompleteProps;
+  AvatarPicker: { compact?: boolean; disabled?: boolean; presetCount?: number };
   Cascader: CascaderProps;
   Checkbox: CheckboxProps;
   CheckboxGroup: CheckboxGroupProps;
@@ -690,6 +693,7 @@ async function initComponentAdapter() {
       visibleEvent: 'onVisibleChange',
     }),
     AutoComplete,
+    AvatarPicker,
     Cascader,
     Checkbox,
     CheckboxGroup,

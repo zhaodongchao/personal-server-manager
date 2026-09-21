@@ -1,8 +1,13 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { onMounted, ref } from 'vue';
 
 import { Profile } from '@vben/common-ui';
 import { useUserStore } from '@vben/stores';
+
+import { message } from 'ant-design-vue';
+
+import { getUserInfoApi, updateUserProfileApi } from '#/api';
+import AvatarPicker from '#/components/avatar-picker/index.vue';
 
 import ProfileBase from './base-setting.vue';
 import ProfileNotificationSetting from './notification-setting.vue';
@@ -12,6 +17,22 @@ import ProfileSecuritySetting from './security-setting.vue';
 const userStore = useUserStore();
 
 const tabsValue = ref<string>('basic');
+
+/** 头像原始值：null=未设置 / ''=恢复默认 / preset:N / data:image/...;base64,... */
+const avatarValue = ref<null | string>(null);
+
+onMounted(async () => {
+  const info = await getUserInfoApi();
+  avatarValue.value = info.avatarRaw ?? null;
+});
+
+/** 顶部头像点选/上传后即时落库，并同步本地用户信息（侧边栏头像随之更新） */
+async function handleAvatarChange(value: null | string) {
+  avatarValue.value = value;
+  await updateUserProfileApi({ avatar: value });
+  userStore.setUserInfo(await getUserInfoApi());
+  message.success('头像已更新');
+}
 
 const tabs = ref([
   {
@@ -39,6 +60,13 @@ const tabs = ref([
     :user-info="userStore.userInfo"
     :tabs="tabs"
   >
+    <template #avatar>
+      <AvatarPicker
+        :value="avatarValue"
+        compact
+        @update:value="handleAvatarChange"
+      />
+    </template>
     <template #content>
       <ProfileBase v-if="tabsValue === 'basic'" />
       <ProfileSecuritySetting v-if="tabsValue === 'security'" />

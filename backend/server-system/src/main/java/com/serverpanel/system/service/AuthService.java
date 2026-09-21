@@ -2,6 +2,7 @@ package com.serverpanel.system.service;
 
 import cn.dev33.satoken.stp.StpUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.serverpanel.common.constant.CacheConstants;
 import com.serverpanel.common.exception.ErrorCode;
 import com.serverpanel.common.exception.ServiceException;
@@ -38,6 +39,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final StringRedisTemplate redisTemplate;
     private final PermissionService permissionService;
+    private final AvatarSupport avatarSupport;
 
     @Value("${serverpanel.login.max-fail:5}")
     private int maxFail;
@@ -109,7 +111,11 @@ public class AuthService {
         vo.setUserId(String.valueOf(user.getId()));
         vo.setUsername(user.getUsername());
         vo.setRealName(user.getNickname());
-        vo.setAvatar(user.getAvatar() == null ? "" : user.getAvatar());
+        // 归一化为可直接渲染的 src：预设映射站内静态资源、自定义保留 data URL、
+        // 空值回落默认头像（原先返回空串会让头像渲染为空白）
+        vo.setAvatar(avatarSupport.toRenderable(user.getAvatar()));
+        vo.setAvatarRaw(user.getAvatar());
+        vo.setGender(user.getGender());
         vo.setDesc(user.getDesc() == null ? "" : user.getDesc());
         vo.setEmail(user.getEmail());
         vo.setPhone(user.getPhone());
@@ -134,13 +140,28 @@ public class AuthService {
         if (body.getPhone() != null) {
             user.setPhone(body.getPhone());
         }
-        if (body.getAvatar() != null) {
-            user.setAvatar(body.getAvatar());
+        if (body.getGender() != null) {
+            user.setGender(body.getGender());
+        }
+        // 头像三态：null=不修改；非 null 才处理（空串表示清除，恢复默认）
+        String avatar = body.getAvatar() == null
+            ? null : avatarSupport.parseAndValidate(body.getAvatar());
+        boolean clearAvatar = avatar == null && body.getAvatar() != null;
+        if (avatar != null) {
+            user.setAvatar(avatar);
+            user.setAvatarUpdatedAt(LocalDateTime.now());
         }
         if (body.getDesc() != null) {
             user.setDesc(body.getDesc());
         }
         userMapper.updateById(user);
+        if (clearAvatar) {
+            // 清除头像必须显式 set：updateById 默认 NOT_NULL 策略会忽略 null 字段
+            userMapper.update(null, new LambdaUpdateWrapper<SysUser>()
+                .eq(SysUser::getId, userId)
+                .set(SysUser::getAvatar, null)
+                .set(SysUser::getAvatarUpdatedAt, LocalDateTime.now()));
+        }
         // 同步会话中的昵称，供后续接口直接读取
         StpUtil.getSession().set(LoginHelper.KEY_NICKNAME, user.getNickname());
     }

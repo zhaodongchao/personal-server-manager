@@ -29,10 +29,13 @@ const tabsValue = defineModel<string>('modelValue');
     <div class="flex size-full">
       <Card class="w-1/6 flex-none">
         <div class="mt-4 flex-col-center h-40 gap-4">
-          <VbenAvatar
-            :src="userInfo?.avatar ?? preferences.app.defaultAvatar"
-            class="size-20"
-          />
+          <!-- 头像区默认渲染仍为原 VbenAvatar；业务方可选传入 #avatar 覆盖以实现编辑 -->
+          <slot name="avatar" :user-info="userInfo">
+            <VbenAvatar
+              :src="userInfo?.avatar ?? preferences.app.defaultAvatar"
+              class="size-20"
+            />
+          </slot>
           <span class="text-lg font-semibold">
             {{ userInfo?.realName ?? '' }}
           </span>

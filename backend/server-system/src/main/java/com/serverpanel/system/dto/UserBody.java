@@ -1,5 +1,7 @@
 package com.serverpanel.system.dto;
 
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
@@ -30,6 +32,22 @@ public class UserBody {
 
     @Size(max = 20, message = "手机号过长")
     private String phone;
+
+    /** 性别 0未知 1男 2女 */
+    @Min(value = 0, message = "性别取值非法")
+    @Max(value = 2, message = "性别取值非法")
+    private Integer gender;
+
+    /**
+     * 头像。三态语义：
+     * <ul>
+     *   <li>null —— 不修改（编辑时保持原值）</li>
+     *   <li>空串 —— 清除，恢复系统默认头像</li>
+     *   <li>preset:N / data:image/...;base64,... —— 设定为预设或自定义头像</li>
+     * </ul>
+     * 格式与体积校验由 AvatarSupport 负责。
+     */
+    private String avatar;
 
     /** 1 启用 0 停用 */
     private Integer status;

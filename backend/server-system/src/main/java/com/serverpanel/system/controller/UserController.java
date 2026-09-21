@@ -6,7 +6,8 @@ import com.serverpanel.common.core.PageQuery;
 import com.serverpanel.common.core.PageResult;
 import com.serverpanel.common.core.R;
 import com.serverpanel.system.dto.UserBody;
-import com.serverpanel.system.entity.SysUser;
+import com.serverpanel.system.dto.UserDetailVO;
+import com.serverpanel.system.dto.UserVO;
 import com.serverpanel.system.service.SysUserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -34,7 +35,7 @@ public class UserController {
 
     @SaCheckPermission("system:user:list")
     @GetMapping("/page")
-    public R<PageResult<SysUser>> page(PageQuery query,
+    public R<PageResult<UserVO>> page(PageQuery query,
             @RequestParam(required = false) String username,
             @RequestParam(required = false) Integer status) {
         return R.ok(userService.page(query, username, status));
@@ -42,7 +43,7 @@ public class UserController {
 
     @SaCheckPermission("system:user:list")
     @GetMapping("/{id}")
-    public R<SysUser> get(@PathVariable Long id) {
+    public R<UserDetailVO> get(@PathVariable Long id) {
         return R.ok(userService.get(id));
     }
 

@@ -43,6 +43,27 @@ const formSchema = computed((): VbenFormSchema[] => [
     label: '手机号',
   },
   {
+    fieldName: 'gender',
+    component: 'Select',
+    componentProps: {
+      options: [
+        { label: '未知', value: 0 },
+        { label: '男', value: 1 },
+        { label: '女', value: 2 },
+      ],
+    },
+    label: '性别',
+  },
+  {
+    fieldName: 'avatar',
+    component: 'AvatarPicker',
+    componentProps: {
+      presetCount: 8,
+    },
+    help: '可选择默认头像，或上传图片（自动压缩）',
+    label: '头像',
+  },
+  {
     fieldName: 'desc',
     component: 'Textarea',
     label: '个人简介',
@@ -60,6 +81,9 @@ function setFormValues(data: Recordable<any>) {
     username: data.username,
     email: data.email,
     phone: data.phone,
+    gender: data.gender ?? 0,
+    // 用入库原始值回显：null=默认 / preset:N=预设高亮 / data:...(自定义图)
+    avatar: data.avatarRaw ?? null,
     desc: data.desc,
   });
 }
@@ -69,6 +93,9 @@ async function handleSubmit(values: Recordable<any>) {
     realName: values.realName,
     email: values.email,
     phone: values.phone,
+    gender: values.gender ?? 0,
+    // null=不修改；''=恢复默认；preset:N / data:image/...;base64,...=设定
+    avatar: values.avatar ?? null,
     desc: values.desc,
   });
   // 刷新本地用户信息，同步侧边栏昵称与头像

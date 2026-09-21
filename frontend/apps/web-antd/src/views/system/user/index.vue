@@ -7,6 +7,7 @@ import { onMounted, ref } from 'vue';
 
 import { Page, useVbenModal } from '@vben/common-ui';
 import { useAccess } from '@vben/access';
+import { useUserStore } from '@vben/stores';
 
 import { Button, message, Modal, Tag } from 'ant-design-vue';
 
@@ -17,6 +18,8 @@ import {
   createUserApi,
   deleteUserApi,
   getRoleAllApi,
+  getUserApi,
+  getUserInfoApi,
   getUserPageApi,
   getUserRoleIdsApi,
   updateUserApi,
@@ -25,6 +28,14 @@ import {
 defineOptions({ name: 'SystemUser' });
 
 const { hasAccessByCodes } = useAccess();
+const userStore = useUserStore();
+
+/** 性别枚举：与后端 sys_user.gender 保持一致（0未知 1男 2女） */
+const GENDER_OPTIONS = [
+  { label: '未知', value: 0 },
+  { label: '男', value: 1 },
+  { label: '女', value: 2 },
+];
 
 const roleOptions = ref<{ label: string; value: string }[]>([]);
 const editingId = ref<null | string>(null);
@@ -69,6 +80,14 @@ const gridOptions: VxeTableGridOptions = {
     { field: 'nickname', title: '昵称' },
     { field: 'email', title: '邮箱' },
     { field: 'phone', title: '手机号' },
+    {
+      field: 'gender',
+      formatter: ({ cellValue }: { cellValue?: number }) =>
+        GENDER_OPTIONS.find((item) => item.value === cellValue)?.label ??
+        '未知',
+      title: '性别',
+      width: 80,
+    },
     {
       field: 'status',
       slots: { default: 'status' },
@@ -154,6 +173,23 @@ const [UserForm, userFormApi] = useVbenForm({
       label: '手机号',
     },
     {
+      component: 'Select',
+      componentProps: {
+        options: GENDER_OPTIONS,
+        placeholder: '请选择性别',
+      },
+      defaultValue: 0,
+      fieldName: 'gender',
+      label: '性别',
+    },
+    {
+      component: 'AvatarPicker',
+      componentProps: { presetCount: 8 },
+      fieldName: 'avatar',
+      help: '可选择默认头像，或上传图片（自动压缩）',
+      label: '头像',
+    },
+    {
       component: 'RadioGroup',
       componentProps: {
         options: [
@@ -186,7 +222,10 @@ const [UserModal, userModalApi] = useVbenModal({
     if (!valid) return;
     const values = await userFormApi.getValues();
     const body: UserApi.UserBody = {
+      // null=不修改；''=恢复默认；preset:N / data:image/...;base64,...=设定
+      avatar: values.avatar ?? null,
       email: values.email || undefined,
+      gender: values.gender ?? 0,
       nickname: values.nickname,
       password: values.password || undefined,
       phone: values.phone || undefined,
@@ -205,6 +244,10 @@ const [UserModal, userModalApi] = useVbenModal({
       }
       userModalApi.close();
       gridApi.query();
+      // 改的是自己时同步刷新本地用户信息，让侧边栏头像/昵称立即更新
+      if (editingId.value && editingId.value === userStore.userInfo?.userId) {
+        userStore.setUserInfo(await getUserInfoApi());
+      }
     } finally {
       userModalApi.unlock();
     }
@@ -214,7 +257,7 @@ const [UserModal, userModalApi] = useVbenModal({
 async function openCreate() {
   editingId.value = null;
   userFormApi.resetForm();
-  userFormApi.setValues({ status: 1 });
+  userFormApi.setValues({ avatar: null, gender: 0, status: 1 });
   userFormApi.updateSchema([
     { componentProps: { disabled: false }, fieldName: 'username' },
   ]);
@@ -224,15 +267,21 @@ async function openCreate() {
 
 async function openEdit(record: UserApi.SysUser) {
   editingId.value = record.id;
-  const roleIds = await getUserRoleIdsApi(record.id);
+  // 列表不含头像大字段，编辑时按 id 单独取详情（含 avatar / avatarUrl）
+  const [roleIds, detail] = await Promise.all([
+    getUserRoleIdsApi(record.id),
+    getUserApi(record.id),
+  ]);
   userFormApi.resetForm();
   userFormApi.setValues({
-    email: record.email,
-    nickname: record.nickname,
-    phone: record.phone,
+    avatar: detail.avatar ?? null,
+    email: detail.email,
+    gender: detail.gender ?? 0,
+    nickname: detail.nickname,
+    phone: detail.phone,
     roleIds,
-    status: record.status,
-    username: record.username,
+    status: detail.status,
+    username: detail.username,
   });
   userFormApi.updateSchema([
     { componentProps: { disabled: true }, fieldName: 'username' },
@@ -293,7 +342,7 @@ function confirmDelete(record: UserApi.SysUser) {
         </div>
       </template>
     </Grid>
-    <UserModal class="w-[520px]" title="用户">
+    <UserModal class="w-[660px]" title="用户">
       <UserForm />
     </UserModal>
   </Page>
