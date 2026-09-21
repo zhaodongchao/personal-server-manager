@@ -358,7 +358,19 @@ function confirmDelete(row: OpsApi.FirewallRule) {
   const risk = evaluateDeleteRisk(row, guard.value);
   const forceNeeded = !row.deletable;
   const keyword = risk?.level === 'danger' ? (risk.keyword ?? '') : '';
-  const reasons = [risk?.text, forceNeeded ? '该规则由外部程序（如 Fail2Ban）维护，删除后可能被自动重建。' : '']
+  // ufw 开启 IPv6 时一次 add 会写两条（本体 + v6 副本），后端按同指纹一并删除，
+  // 这里必须明说：用户点的是一行，实际动的是两条
+  const twin = (status.value.rules ?? []).find(
+    (r) =>
+      r.no !== row.no &&
+      r.fingerprint === row.fingerprint &&
+      r.ipv6 !== row.ipv6,
+  );
+  const reasons = [
+    risk?.text,
+    forceNeeded ? '该规则由外部程序（如 Fail2Ban）维护，删除后可能被自动重建。' : '',
+    twin ? `存在 IPv6 副本（#${twin.no}），将一并删除。` : '',
+  ]
     .filter(Boolean)
     .join(' ');
   openDanger({

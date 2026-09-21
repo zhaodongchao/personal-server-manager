@@ -440,16 +440,62 @@ public class FirewallService {
         }
         requireGuard(null, target, body.getConfirm());
 
-        HostResult r = hostChannel.call("firewall.deleteByNo",
-                Map.of("no", body.getNo()), "删除防火墙规则", 60);
+        // IPv4/IPv6 成对规则：开启 IPv6 时一次 add 会写入本体与 (v6) 副本两条，
+        // 只删其中一条会留下「看不见的半条规则」——放行规则还算温和，
+        // 若是 deny/reject，使用者以为删干净了，v6 侧其实仍在拦。
+        List<FirewallRule> batch = new ArrayList<>();
+        batch.add(target);
+        String fp = target.getFingerprint();
+        if (fp != null && !fp.isBlank()) {
+            for (FirewallRule r0 : rules) {
+                if (r0.getNo().equals(target.getNo())) {
+                    continue;
+                }
+                if (fp.equals(r0.getFingerprint()) && r0.isIpv6() != target.isIpv6()) {
+                    batch.add(r0);
+                    break;
+                }
+            }
+        }
+        // ufw 每删一条都会重排编号：必须先删编号大的，再删小的
+        batch.sort((a, b) -> Integer.compare(b.getNo(), a.getNo()));
+
+        boolean ok = true;
+        List<String> diff = new ArrayList<>();
+        List<Map<String, Object>> undo = new ArrayList<>();
+        String lastCommand = null;
+        for (FirewallRule one : batch) {
+            HostResult r = hostChannel.call("firewall.deleteByNo",
+                    Map.of("no", one.getNo()), "删除防火墙规则", 60);
+            lastCommand = r.dataString("command");
+            if (r.getExitCode() != 0) {
+                ok = false;
+                diff.add("! 删除 #" + one.getNo() + " 失败：" + r.errorText());
+            } else if (batch.size() > 1) {
+                diff.add("- #" + one.getNo() + " " + describe(one)
+                        + (one.isIpv6() ? "（IPv6 副本）" : ""));
+            }
+            Map<String, Object> restore = specFromRule(one);
+            if (restore != null) {
+                undo.add(opArgs("firewall.addRule", restore));
+            }
+        }
         String after = numberedSnapshot();
-        List<String> diff = diffRules(parseRules(before), parseRules(after));
-        List<Map<String, Object>> undo = List.of(
-                opArgs("firewall.addRule", specFromRule(target)));
+        if (diff.isEmpty()) {
+            diff.addAll(diffRules(parseRules(before), parseRules(after)));
+        }
         Long changeId = recordChange("DELETE_RULE", describe(target), before, after, diff, undo,
-                body.getConfirm() != null, null, r.getExitCode() == 0,
-                r.getExitCode() == 0 ? null : r.errorText());
-        return result(r, changeId, diff, null);
+                body.getConfirm() != null, null, ok,
+                ok ? null : "部分规则删除失败");
+        FirewallActionResultVO vo = new FirewallActionResultVO();
+        vo.setOk(ok);
+        vo.setMessage(ok
+                ? (batch.size() > 1 ? "已删除规则及其 IPv6 副本" : "规则已删除")
+                : "删除未完全成功，请查看差异");
+        vo.setCommand(lastCommand);
+        vo.setChangeId(changeId);
+        vo.setDiff(diff);
+        return vo;
     }
 
     /** 启用/停用防火墙（L3 + 看门狗） */
@@ -906,23 +952,41 @@ public class FirewallService {
         return copy;
     }
 
-    /** 由已解析的规则反推写入参数（用于删除操作的回滚脚本） */
+    /**
+     * 由已解析的规则反推写入参数（用于删除操作的回滚脚本）。
+     *
+     * <p>返回 {@code null} 表示这条规则无法被还原成 ufw 命令行（典型是应用名规则
+     * {@code Nginx HTTP}），此时删除操作会被记为不可回滚——与其在回滚时拼出一条
+     * 缺端口的非法命令，不如一开始就如实标记为不可撤销。
+     *
+     * <p>踩过的坑：{@link #TO_MULTI} 的 {@code [\d,]+} 同样能匹配单个端口，
+     * 若不加逗号判断，{@code 39999/tcp} 会被误判成「多端口」，写出的回滚脚本是
+     * {@code ports:[39999]} 而非 {@code port:39999}，宿主代理在 kind=port 分支上
+     * 取不到 port 键，直接回「端口 必须是整数」，回滚必然失败。
+     * 这里与 {@link #toKind} 保持同一判定口径。
+     */
     private Map<String, Object> specFromRule(FirewallRule rule) {
-        Map<String, Object> spec = new LinkedHashMap<>();
         String kind = rule.getToKind();
-        spec.put("kind", "app".equals(kind) ? "port" : kind);
+        if (kind == null || "app".equals(kind)) {
+            return null;
+        }
+        Map<String, Object> spec = new LinkedHashMap<>();
+        spec.put("kind", kind);
         spec.put("action", rule.getAction());
         String to = rule.getTo();
         String portPart = to.contains(" on ") ? to.substring(0, to.indexOf(" on ")) : to;
         String proto = "tcp";
         Matcher multi = TO_MULTI.matcher(portPart);
         Matcher single = TO_PORT.matcher(portPart);
+        boolean parsed = false;
         if ("any".equals(kind)) {
             proto = "any";
-        } else if (multi.matches()) {
+            parsed = true;
+        } else if (multi.matches() && portPart.indexOf(',') > 0) {
             proto = multi.group("proto");
             spec.put("ports", Arrays.stream(multi.group("nums").split(","))
                     .map(Integer::parseInt).collect(java.util.stream.Collectors.toList()));
+            parsed = true;
         } else if (single.matches()) {
             if (single.group("proto") != null) {
                 proto = single.group("proto");
@@ -931,6 +995,10 @@ public class FirewallService {
             if (single.group("end") != null) {
                 spec.put("portEnd", Integer.parseInt(single.group("end")));
             }
+            parsed = true;
+        }
+        if (!parsed) {
+            return null;
         }
         spec.put("protocol", proto);
         if (!"any".equals(rule.getSourceKind())) {
