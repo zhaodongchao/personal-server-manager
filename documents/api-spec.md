@@ -44,7 +44,7 @@
 | 2xxx | 系统管理 | `2001` 用户已存在、`2002` 角色已存在、`2003` 内置数据、`2004` 不能删自己、`2005` 有子菜单、`2006` 角色在用、`2007/2008` 字典重复、`2009` 参数键重复 |
 | 3xxx | 监控 | `3001` 采集器未就绪 |
 | 4xxx | 文件 | `4001` 路径越权、`4002` 目标已存在、`4003` 源路径不存在、`4004` 根目录受限、`4005` 文件过大、`4006` 非文本、`4007` 压缩格式不支持、`4008` 回收站记录失效、`4009` 权限非法、`4010` 目录非空 |
-| 5xxx | 运维 | `5001` 命令不在白名单、`5002` 超时、`5003` 进程不存在、`5004` 服务不可管理、`5005` cron 非法、`5006` 任务不存在、`5007` 无可用防火墙、`5008` 规则不存在 |
+| 5xxx | 运维 | `5001` 命令不在白名单、`5002` 超时、`5003` 进程不存在、`5004` 服务不可管理、`5005` cron 非法、`5006` 任务不存在、`5007` 无可用防火墙、`5008` 规则不存在、`5009` 宿主通道不可用、`5010` 宿主通道版本不匹配（已降级只读）、`5011` 服务操作被保护清单拦截、`5012` 计划任务执行中（并发互斥）、`5013` cron 补跑次数超上限、`5014` 防火墙规则编号已变化、`5015` 该操作会切断 SSH/面板访问（需二次确认）、`5016` 目标规则由外部程序托管（禁止面板删除）、`5017` 防火墙变更不可回滚 |
 | 6xxx | 应用栈 | `6001` Docker 不可用、`6002` 资源不存在、`6003` 域名已存在、`6004` Nginx 不可用、`6005` 配置校验失败、`6006` MySQL 管理连接不可用、`6007` 标识符非法、`6008` 库已存在、`6009` 库不存在 |
 
 ### 4. 分页结构与参数
@@ -478,38 +478,135 @@ ProcessInfo：`pid`(number)、`user`、`cpu`、`mem`、`stat`、`elapsed`、`cmd
 
 ### 2. systemd 服务管理 `ops/service`
 
-| 方法 | 路径 | 权限 | 说明 |
-| ---- | ---- | ---- | ---- |
-| GET | `/list?keyword=` | `ops:service:list` | 服务列表 `ServiceInfo[]` |
-| GET | `/{name}` | `ops:service:list` | 服务状态文本 |
-| POST | `/{name}/{action}` | `ops:service:manage` | 动作（start/stop/restart/reload/enable/disable，高危审计） |
-
-ServiceInfo：`name`、`load`、`active`、`sub`、`description`、`enabled`。
-
-### 3. 计划任务 `ops/cron`
+> 服务页依赖宿主机能力（systemctl / journalctl），容器内没有这些命令，因此本节全部接口
+> 经**宿主执行通道**（见 §6.5）执行；通道不可用时写接口返回 `5009`，前端整页只读降级。
 
 | 方法 | 路径 | 权限 | 说明 |
 | ---- | ---- | ---- | ---- |
-| GET | `/page?keyword=` | `ops:cron:list` | 任务分页 |
+| GET | `/page?keyword=&active=&unitFileState=&failedOnly=&includeAlias=&pageNum=&pageSize=` | `ops:service:list` | 分页列表（推荐，含未加载单元） |
+| GET | `/list?keyword=` | `ops:service:list` | 全量列表（兼容保留） |
+| GET | `/failed` | `ops:service:list` | 失败单元聚合（页面顶部告警条） |
+| GET | `/summary` | `ops:service:list` | 总览统计（统计卡） |
+| GET | `/protected` | `ops:service:list` | 保护清单（前端提前标识） |
+| GET | `/{name}` | `ops:service:list` | `systemctl status` 原文 |
+| GET | `/{name}/detail` | `ops:service:list` | 结构化详情（基本/PID/依赖/日志四块） |
+| GET | `/{name}/logs?lines=&since=&priority=` | `ops:service:log` | journal 日志（可筛选） |
+| POST | `/{name}/{action}` | `ops:service:manage` | start/stop/restart/reload/enable/disable（高危审计） |
+| POST | `/{name}/action` | `ops:service:manage` | 动作 + options（推荐） |
+| POST | `/daemon-reload` | `ops:service:manage` | systemd daemon-reload |
+| POST | `/batch` | `ops:service:batch` | 批量操作（高危审计） |
+
+`ServiceVO`：`name`、`load`、`active`、`sub`、`description`、`enabled`，
+以及实时字段 `mainPid`、`memoryBytes`、`uptimeSeconds`、`restarts`、`failedSinceEpoch`。
+
+单元名合法性 `^[A-Za-z0-9_@\-][A-Za-z0-9_.@:\-]{0,254}$`——systemd 会把 `-` 转义成
+`\x2d`，根挂载点 `-.mount` 以 `-` 开头；模板单元（`xxx@.service`）在 `list-unit-files`
+里合法但无法被 `systemctl show`，**批量查询整批会因此中止**，后端会先过滤模板单元、
+失败时按二分降到单单元重试。
+
+### 3. 计划管理 `ops/cron`
+
+| 方法 | 路径 | 权限 | 说明 |
+| ---- | ---- | ---- | ---- |
+| GET | `/page?keyword=&status=&lastResult=&pageNum=&pageSize=` | `ops:cron:list` | 任务分页 |
+| GET | `/summary` | `ops:cron:list` | 统计（total/enabled/disabled/running/failed24h） |
+| POST | `/preview` | `ops:cron:list` | 表达式预览（cron-utils 中文描述 + 未来 N 次执行时间） |
+| GET | `/commands/whitelist` | `ops:cron:list` | 可执行命令白名单（含宿主机可用性标注） |
 | POST | `/` | `ops:cron:add` | 新增 |
 | PUT | `/` | `ops:cron:edit` | 编辑 |
+| PATCH | `/{id}/status` | `ops:cron:status` | 启用/停用（body `{status: 1\|0}`） |
 | DELETE | `/{id}` | `ops:cron:delete` | 删除（高危审计） |
+| POST | `/batch-delete` | `ops:cron:delete` | 批量删除（body `{ids: [...]}`） |
 | POST | `/{id}/run` | `ops:cron:run` | 立即执行，返回 `data: logId`（高危审计） |
-| GET | `/{id}/logs` | `ops:cron:list` | 执行日志分页 |
+| GET | `/{id}/logs` | `ops:cron:list` | 执行日志分页（可按 result 筛选） |
+| GET | `/{id}/logs/{logId}` | `ops:cron:list` | 单条日志详情（前端轮询至 `finishedAt` 非空） |
+| GET | `/{id}/logs/{logId}/download` | `ops:cron:list` | 下载完整输出 |
+| DELETE | `/{id}/logs` | `ops:cron:log-clean` | 清空该任务日志（高危审计） |
 
-CronJobBody：`id`(编辑时必填)、`name`（必填）、`cronExpr`（必填）、`command`（必填，白名单命令+参数）、`timeoutSec`（默认 300）、`status`（1/0）、`remark`。
+要点：
+- **命令经宿主执行通道执行**（argv 数组、禁止 shell），首词必须在白名单内；
+- `splitCommand` 支持引号分词（`"..."` / `'...'`），如 `df -h "/"`；
+- 退出码语义：`0` 成功、`-1` 失败、`-2` 超时（`timedOut=1`）、`-3` 并发互斥跳过；
+- `misfirePolicy`（skip/run_once/catch_up，补跑上限 10）、`overlapPolicy`（skip/queue/parallel）、
+  `maxFail`（连续失败自动停用阈值，0=不自动停用）；
+- 并发互斥用 `UPDATE ... SET running=1 WHERE id=? AND running=0` 原子抢占；
+- 日志清理：每日 03:30 按天清理 + 每任务保留最新 N 条。
 
 ### 4. 防火墙 `ops/firewall`
 
+> 除「读」以外全部是高危动作：读需要 `ops:firewall:list`，增删规则需要 `ops:firewall:write`，
+> 全局开关/看门狗需要 `ops:firewall:danger`，回滚需要 `ops:firewall:rollback`。
+> 全部经宿主执行通道调用宿主机 ufw（容器内没有 ufw）。
+
 | 方法 | 路径 | 权限 | 说明 |
 | ---- | ---- | ---- | ---- |
-| GET | `/status` | `ops:firewall:list` | 状态 + 规则列表 `FirewallStatus` |
+| GET | `/status` | `ops:firewall:list` | 状态 + 规则清单 + 生存线 `FirewallStatus` |
+| GET | `/guard` | `ops:firewall:list` | 生存线（SSH/面板端口、来源 IP、风险提示） |
+| GET | `/raw` | `ops:firewall:list` | `ufw status numbered` 原文（排障用） |
+| GET | `/guard/watchdog` | `ops:firewall:list` | 看门狗倒计时（未挂载返回 `data: null`） |
 | POST | `/rule` | `ops:firewall:write` | 新增规则（高危审计） |
-| DELETE | `/rule` | `ops:firewall:write` | 删除规则（高危审计，body 同新增） |
+| DELETE | `/rule` | `ops:firewall:write` | 按编号删除（高危审计，需 fingerprint） |
+| POST | `/enable` \| `/disable` | `ops:firewall:danger` | 全局开关（L3 + 看门狗） |
+| POST | `/default-policy` | `ops:firewall:danger` | 设置默认策略（L3 + 看门狗） |
+| POST | `/reload` | `ops:firewall:write` | 重载 |
+| GET | `/changes?pageNum=&pageSize=` | `ops:firewall:list` | 变更历史（列表不含快照，详情才有） |
+| GET | `/changes/{id}` | `ops:firewall:list` | 变更详情（含前后快照与 diff） |
+| POST | `/changes/{id}/rollback` | `ops:firewall:rollback` | 回滚（需 `confirm: "ROLLBACK"`） |
+| POST | `/guard/watchdog` | `ops:firewall:danger` | 手动挂看门狗（仅 `action=disable`） |
+| POST | `/guard/confirm` | `ops:firewall:danger` | 保留变更（撤销看门狗） |
 
-FirewallStatus：`backend`（ufw/firewalld/none）、`active`(boolean)、`rules[]`（`{id, port, action, source}`）。
+**规则模型**（动作与方向拆成两个字段，避免 `ALLOW IN` 里的方向混进来源列）：
 
-FirewallRuleBody：`port`(number, 1-65535)、`protocol`（tcp/udp）、`action`（allow/deny）、`source`（可选，如 `192.168.1.0/24`）。
+```
+FirewallRule {
+  no           // ufw 编号，会随增删重排
+  to, toKind   // 目标：any / port / range / multi / app
+  action       // allow / deny / reject / limit
+  direction    // in / out / fwd
+  from, sourceKind // 来源：any / ip / cidr
+  ipv6, comment, provenance  // 面板写入自动带 psm: 前缀 → provenance=panel
+  deletable    // fail2ban 等外部托管规则为 false
+  fingerprint  // to|action|from，删除时校验编号指向的仍是同一条
+}
+```
+
+**写入**：`{ target: {kind, port, portEnd, ports}, protocol, action, source, comment, confirm }`。
+
+**删除**：`{ no, fingerprint, confirm?, force? }`——
+
+- 指纹与编号当前指向的规则不一致 → `5014`（防并发误删另一条）；
+- 删除会**连同 IPv6 副本一并处理**：ufw 开启 IPv6 时一次 add 写入本体与 `(v6)` 两条，
+  只删一条会留下看不见的半条规则；执行顺序为先删大编号再删小编号（ufw 每删一条重排编号）；
+- 外部托管规则未带 `force` → `5016`；
+- 无法还原成命令行的规则（应用名 profile 等）会记为 `rollbackable=0`，不可回滚。
+
+**生存线（L3 二次确认，缺少或错误 → `5015`）**：
+
+| 场景 | confirm 关键字 |
+| ---- | ---- |
+| 新增 deny/reject 覆盖 SSH 端口 | `SSH <port>` |
+| 新增 deny/reject 覆盖面板端口 | `PANEL <port>` |
+| 删除 SSH / 面板端口的 allow 规则 | 同上 |
+| 启用防火墙且默认入站 deny 且 SSH 未放行 | `SSH <port>` |
+| 停用防火墙 | `DISABLE` |
+| 收紧默认入站策略 | `SSH <port>` |
+| 回滚 | `ROLLBACK` |
+
+**看门狗**：全局开关类操作生效的同时，在宿主机挂
+`systemd-run --on-active=N` 一次性定时器；N 秒内无人调 `/guard/confirm` 即自动回滚，
+防止「改完就失联、连撤销的机会都没有」。
+
+### 5. 宿主执行通道 `ops/host`
+
+| 方法 | 路径 | 权限 | 说明 |
+| ---- | ---- | ---- | ---- |
+| GET | `/capability` | `ops:service:list` | 通道能力快照（可用性/模式/协议版本/缺失项/安装指引） |
+| POST | `/probe` | `ops:service:list` | 主动重探（安装宿主代理后无需重启面板） |
+
+服务管理、计划管理、防火墙三个模块的系统命令全部经此通道在**宿主机**执行：
+面板容器（eclipse-temurin:21-jre）里没有 systemctl / journalctl / ufw / df，
+过去这些功能在容器内空转。通道不可用时（未安装代理 / socket 不可达）写接口返回 `5009`，
+前端整页只读降级并给出安装指引。通道部署见 `documents/production-deployment.md` 第十一节。
 
 ## 七、应用栈 `/api/v1/appstack`
 

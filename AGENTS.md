@@ -200,7 +200,22 @@ pnpm check:type
 - 构建输出：Vite 默认输出至应用 `dist/` 目录；产物为纯静态资源，可由后端 `SpaForwardController` 托管，或经 `scripts/deploy` 的 Nginx/Docker 部署。
 - 静态资源路径：由 `VITE_BASE` 决定资源基础路径（开发默认 `/`）。
 
-## 6. Agent Team（智能体分工）
+## 6. 宿主执行通道（psm-hostagent）
+
+ServerPanel 跑在容器里，但「服务管理 / 计划管理 / 防火墙管理」三个模块操作的是**宿主机**，
+而面板容器（eclipse-temurin:21-jre）内没有 `systemctl` / `journalctl` / `ufw` / `df`——
+这三块功能在容器里执行是空转。因此引入宿主执行通道：
+
+- **宿主侧**：`ops/hostagent/hostagent.py`，单文件 Python systemd 服务（`psm-hostagent`），
+  监听 AF_UNIX socket `/run/psm-hostagent/agent.sock`（不暴露 TCP），共享密钥认证，
+  28 个操作白名单 + 逐操作参数校验，子进程一律 argv 数组；
+- **后端侧**：`server-ops` 的 `HostChannelService`（`hostChannel.call(op, args, label, timeoutSec)`），
+  能力快照 `/ops/host/capability`，通道不可用时写接口抛 `5009`、前端整页只读降级；
+- **前端侧**：`views/ops/components/HostChannelBanner.vue` 三页共用，展示通道状态与安装指引；
+- 新增「需要宿主机能力」的功能时，必须同时在 hostagent 白名单里加 op，并在
+  `documents/api-spec.md` 第六节登记契约。
+
+## 7. Agent Team（智能体分工）
 
 项目配置 7 个自定义智能体，覆盖前后端全链路职责：
 

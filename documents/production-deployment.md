@@ -310,6 +310,29 @@ sudo rm -rf /opt/serverpanel            # 按需删除（含数据）
 | 文件管理报"源路径不存在" | 确认目标目录在 `PANEL_FILE_ROOTS` 白名单内且物理存在 |
 | 网站管理 `nginx -t` 失败 | 检查 `PANEL_NGINX_CONF_DIR` 是否已被主配置 include，证书文件路径是否正确 |
 
+## 十一、宿主执行通道（psm-hostagent）
+
+面板容器里没有 systemctl / journalctl / ufw 等命令，服务管理、计划管理、防火墙三个模块
+需要在**宿主机**上执行系统命令。为此在宿主机上安装一个极小的 systemd 服务 `psm-hostagent`：
+
+- 单文件 Python 3.11，监听 **AF_UNIX** socket `/run/psm-hostagent/agent.sock`（0660，不暴露 TCP）；
+- 共享密钥认证（密钥 0400），28 个操作白名单 + 每操作参数校验；
+- 子进程一律 argv 数组（不经过 shell），杜绝注入；
+- `RuntimeDirectoryPreserve=yes` 保证重启后 socket inode 稳定。
+
+安装（面板页面「运维工具」里会给出与当前后端协议匹配的安装指引，也可手动执行）：
+
+```bash
+# 仓库内 ops/hostagent/ 提供安装脚本与 hostagent.py
+sudo bash ops/hostagent/install.sh
+# 校验
+systemctl is-active psm-hostagent
+sudo ss -xlp | grep agent.sock
+```
+
+安装完成后回到面板点「重新探测」即可，无需重启面板容器。
+升级面板后若后端协议版本变化，需重新执行安装脚本（脚本会覆盖并重启服务）。
+
 ## 十、上线前安全检查清单
 
 - [ ] 已修改默认密码 `admin / Admin@123`

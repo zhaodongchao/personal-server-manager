@@ -596,7 +596,7 @@ onBeforeUnmount(() => {
         <Tag v-if="status.available" :color="status.active ? 'green' : 'red'">
           {{ status.active ? '已启用' : '未启用' }}
         </Tag>
-        <Tag v-if="status.version">v{{ status.version }}</Tag>
+        <Tag v-if="status.version">{{ status.version }}</Tag>
         <Tag :color="status.ipv6 ? 'blue' : 'default'">
           IPv6 {{ status.ipv6 ? '已开启' : '未开启' }}
         </Tag>
