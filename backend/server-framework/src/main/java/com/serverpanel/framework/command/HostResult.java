@@ -1,8 +1,7 @@
 package com.serverpanel.framework.command;
 
+import java.util.List;
 import java.util.Map;
-
-import com.fasterxml.jackson.databind.JsonNode;
 
 import lombok.Data;
 
@@ -16,6 +15,11 @@ import lombok.Data;
  * </pre>
  * 读取类 op 用 {@link #stdout} 承载命令原文；结构化 op（probe / watchdog 等）用
  * {@link #data} 承载业务负载。
+ *
+ * <p>注意：{@link #data} 刻意声明为 {@code Map<String, Object>} 而非具体 JSON 节点类型。
+ * 本项目为 Spring Boot 4，序列化栈是 <b>Jackson 3（tools.jackson）</b>，而 Jackson 2 的
+ * {@code com.fasterxml.jackson.databind.JsonNode} 在容器里既没有对应 bean、也不在
+ * 默认序列化器覆盖范围内。使用普通 Map 可让本类与 Jackson 主版本解耦。
  *
  * @author zhaodc
  * @since 2026-09-21 UTC+8
@@ -46,8 +50,8 @@ public class HostResult {
 
     private long durationMs;
 
-    /** 结构化负载 */
-    private JsonNode data;
+    /** 结构化负载（结构随 op 而定） */
+    private Map<String, Object> data;
 
     /** 调用的 op 名 */
     private String op;
@@ -81,40 +85,67 @@ public class HostResult {
         return new ExecResult(exitCode, stdout, stderr, timedOut, durationMs);
     }
 
-    /** data 节点下的字符串字段 */
+    /** data 下的原始字段 */
+    public Object dataGet(String field) {
+        return data == null ? null : data.get(field);
+    }
+
+    /** data 下的字符串字段 */
     public String dataString(String field) {
-        if (data == null) {
-            return null;
-        }
-        JsonNode node = data.get(field);
-        return node == null || node.isNull() ? null : node.asText();
+        Object value = dataGet(field);
+        return value == null ? null : String.valueOf(value);
     }
 
-    /** data 节点下的整型字段 */
+    /** data 下的整型字段 */
     public Integer dataInt(String field) {
-        if (data == null) {
-            return null;
+        Object value = dataGet(field);
+        if (value instanceof Number number) {
+            return number.intValue();
         }
-        JsonNode node = data.get(field);
-        return node == null || !node.isNumber() ? null : node.asInt();
+        if (value instanceof String text && !text.isBlank()) {
+            try {
+                return Integer.valueOf(text.trim());
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
     }
 
-    /** data 节点下的布尔字段 */
+    /** data 下的布尔字段 */
     public boolean dataBool(String field) {
-        if (data == null) {
-            return false;
-        }
-        JsonNode node = data.get(field);
-        return node != null && node.asBoolean(false);
+        Object value = dataGet(field);
+        return value instanceof Boolean flag && flag;
     }
 
-    /** data 节点下的列表字段 */
-    public JsonNode dataList(String field) {
-        if (data == null) {
-            return null;
+    /** data 下的列表字段（元素为对象时以 Map 呈现） */
+    @SuppressWarnings("unchecked")
+    public List<Map<String, Object>> dataList(String field) {
+        Object value = dataGet(field);
+        if (value instanceof List<?> list) {
+            return (List<Map<String, Object>>) list;
         }
-        JsonNode node = data.get(field);
-        return node == null || !node.isArray() ? null : node;
+        return List.of();
+    }
+
+    /** data 下的字符串列表字段 */
+    @SuppressWarnings("unchecked")
+    public List<String> dataStringList(String field) {
+        Object value = dataGet(field);
+        if (value instanceof List<?> list) {
+            return (List<String>) list;
+        }
+        return List.of();
+    }
+
+    /** data 下的字符串映射字段 */
+    @SuppressWarnings("unchecked")
+    public Map<String, String> dataStringMap(String field) {
+        Object value = dataGet(field);
+        if (value instanceof Map<?, ?> map) {
+            return (Map<String, String>) map;
+        }
+        return Map.of();
     }
 
     /** 便捷构造：以既有命令结果包装 */
@@ -138,10 +169,5 @@ public class HostResult {
         result.setMessage(message);
         result.setOp(op);
         return result;
-    }
-
-    /** 空 args 的便捷入口 */
-    public static Map<String, Object> noArgs() {
-        return Map.of();
     }
 }

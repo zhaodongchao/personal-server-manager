@@ -9,7 +9,7 @@ import java.nio.channels.SocketChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.HashMap;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -22,10 +22,8 @@ import java.util.concurrent.TimeoutException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
 import lombok.extern.slf4j.Slf4j;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * 宿主代理（psm-hostagent）通道实现。
@@ -37,6 +35,10 @@ import lombok.extern.slf4j.Slf4j;
  * <p>容错策略：任何 IO 异常都不抛出到业务层，而是返回 {@code ok=false} 的
  * {@link HostResult}，由调用方决定降级行为；能力探测结果带 15s 短缓存，
  * 避免每个页面请求都去打一次探测。
+ *
+ * <p>序列化说明：本项目是 Spring Boot 4，默认 JSON 栈为 <b>Jackson 3（tools.jackson）</b>，
+ * 故此处注入 {@link tools.jackson.databind.ObjectMapper}（容器中确实存在该 bean）。
+ * 勿改用 {@code com.fasterxml.jackson}（其在容器内无对应 bean，会导致启动失败）。
  *
  * @author zhaodc
  * @since 2026-09-21 UTC+8
@@ -112,21 +114,21 @@ public class HostAgentExecutor implements HostExecutor {
         capability.setCheckedAt(System.currentTimeMillis());
         capability.setSocketPath(socketPath);
         capability.setInstallHint(installHint());
+        capability.setMissing(List.of());
+        capability.setTools(Map.of());
 
         String secret = readSecret();
         if (secret == null) {
             capability.setOk(false);
             capability.setMessage("未找到宿主代理密钥文件（" + secretFile
                     + "），面板无法访问宿主机系统能力");
-            cachedCapability = capability;
-            capabilityCheckedAt = System.currentTimeMillis();
+            cache(capability);
             return capability;
         }
         if (!Files.exists(Path.of(socketPath))) {
             capability.setOk(false);
             capability.setMessage("宿主代理套接字不存在（" + socketPath + "），未安装或未启动 psm-hostagent");
-            cachedCapability = capability;
-            capabilityCheckedAt = System.currentTimeMillis();
+            cache(capability);
             return capability;
         }
 
@@ -136,33 +138,29 @@ public class HostAgentExecutor implements HostExecutor {
             capability.setMessage(result.getCode() == null
                     ? "宿主代理调用失败：" + result.errorText()
                     : "宿主代理拒绝请求（" + result.getCode() + "）：" + result.errorText());
-            cachedCapability = capability;
-            capabilityCheckedAt = System.currentTimeMillis();
+            cache(capability);
             return capability;
         }
 
-        JsonNode data = result.getData();
-        capability.setOk(true);
         capability.setMode("hostagent");
-        capability.setProtocol(intOf(data, "protocol", 0));
-        capability.setAgentVersion(textOf(data, "agentVersion"));
-        capability.setOs(textOf(data, "os"));
-        capability.setKernel(textOf(data, "kernel"));
-        capability.setSystemRunning(textOf(data, "systemRunning"));
-        capability.setFirewallBackend(textOf(data, "firewallBackend"));
-        capability.setTools(mapOf(data, "tools"));
-        capability.setMissing(listOf(data, "missing"));
-        capability.setUfwAvailable(capability.getTools() != null
-                && capability.getTools().containsKey("ufw"));
+        capability.setProtocol(intOrZero(result.dataInt("protocol")));
+        capability.setAgentVersion(result.dataString("agentVersion"));
+        capability.setOs(result.dataString("os"));
+        capability.setKernel(result.dataString("kernel"));
+        capability.setSystemRunning(result.dataString("systemRunning"));
+        capability.setFirewallBackend(result.dataString("firewallBackend"));
+        capability.setTools(result.dataStringMap("tools"));
+        capability.setMissing(result.dataStringList("missing"));
+        capability.setUfwAvailable(capability.getTools().containsKey("ufw"));
         if (!capability.protocolCompatible()) {
             capability.setOk(false);
             capability.setMessage("宿主代理协议版本不匹配（代理 " + capability.getProtocol()
                     + "，面板要求 " + HostCapability.REQUIRED_PROTOCOL + "），已降级为只读");
         } else {
+            capability.setOk(true);
             capability.setMessage("宿主通道正常");
         }
-        cachedCapability = capability;
-        capabilityCheckedAt = System.currentTimeMillis();
+        cache(capability);
         return capability;
     }
 
@@ -179,7 +177,8 @@ public class HostAgentExecutor implements HostExecutor {
                     "未找到宿主代理密钥文件（" + secretFile + "）", op);
         }
         long timeout = Math.max(1, Math.min(timeoutSeconds, maxTimeoutSeconds));
-        return doCall(op, args == null ? Map.of() : args, secret, timeout * 1000L + connectTimeoutMs + 5_000L);
+        return doCall(op, args == null ? Map.of() : args, secret,
+                timeout * 1000L + connectTimeoutMs + 5_000L);
     }
 
     /** 一次完整的请求 / 响应往返 */
@@ -191,7 +190,7 @@ public class HostAgentExecutor implements HostExecutor {
             body.put("secret", secret);
             body.put("args", args);
             request = objectMapper.writeValueAsString(body);
-        } catch (IOException e) {
+        } catch (Exception e) {
             return HostResult.failure("encode-error", "请求序列化失败: " + e.getMessage(), op);
         }
 
@@ -219,8 +218,9 @@ public class HostAgentExecutor implements HostExecutor {
                 result.setOp(op);
             }
             return result;
-        } catch (IOException e) {
-            log.warn("宿主代理响应解析失败：op={} body={}", op, abbreviate(responseLine));
+        } catch (Exception e) {
+            log.warn("宿主代理响应解析失败：op={} err={} body={}", op, e.getMessage(),
+                    abbreviate(responseLine));
             return HostResult.failure("bad-response", "宿主代理响应格式异常", op);
         }
     }
@@ -275,44 +275,19 @@ public class HostAgentExecutor implements HostExecutor {
         }
     }
 
+    private void cache(HostCapability capability) {
+        cachedCapability = capability;
+        capabilityCheckedAt = System.currentTimeMillis();
+    }
+
+    private static int intOrZero(Integer value) {
+        return value == null ? 0 : value;
+    }
+
     /** 安装指引（前端直接展示给使用者） */
     private String installHint() {
         return "在宿主机执行仓库内 ops/hostagent/install.sh 安装宿主代理，"
                 + "并确保面板容器挂载 /run/psm-hostagent 与 /etc/psm-hostagent:ro";
-    }
-
-    private static String textOf(JsonNode node, String field) {
-        if (node == null) {
-            return null;
-        }
-        JsonNode value = node.get(field);
-        return value == null || value.isNull() ? null : value.asText();
-    }
-
-    private static int intOf(JsonNode node, String field, int fallback) {
-        if (node == null) {
-            return fallback;
-        }
-        JsonNode value = node.get(field);
-        return value == null || !value.isNumber() ? fallback : value.asInt();
-    }
-
-    private static Map<String, String> mapOf(JsonNode node, String field) {
-        if (node == null || node.get(field) == null || !node.get(field).isObject()) {
-            return new HashMap<>();
-        }
-        Map<String, String> map = new LinkedHashMap<>();
-        node.get(field).fields().forEachRemaining(entry -> map.put(entry.getKey(), entry.getValue().asText()));
-        return map;
-    }
-
-    private static List<String> listOf(JsonNode node, String field) {
-        if (node == null || node.get(field) == null || !node.get(field).isArray()) {
-            return List.of();
-        }
-        List<String> list = new java.util.ArrayList<>();
-        node.get(field).forEach(item -> list.add(item.asText()));
-        return list;
     }
 
     private static String abbreviate(String text) {
@@ -320,5 +295,18 @@ public class HostAgentExecutor implements HostExecutor {
             return "";
         }
         return text.length() <= 200 ? text : text.substring(0, 200) + "...";
+    }
+
+    /** 供子类/测试覆盖的可用 op 列表（当前仅作文档用途） */
+    public static List<String> knownOps() {
+        return new ArrayList<>(List.of(
+                "host.ping", "host.probe", "host.info", "host.listenPorts", "host.sshdPorts",
+                "service.listUnitFiles", "service.listUnits", "service.failed", "service.show",
+                "service.status", "service.cat", "service.isActive", "service.logs",
+                "service.action", "service.daemonReload",
+                "firewall.statusRaw", "firewall.raw", "firewall.addRule", "firewall.deleteRule",
+                "firewall.deleteByNo", "firewall.setEnabled", "firewall.setDefault",
+                "firewall.reload", "firewall.version",
+                "watchdog.arm", "watchdog.status", "watchdog.list", "watchdog.confirm"));
     }
 }
