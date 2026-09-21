@@ -288,24 +288,121 @@ export namespace OpsApi {
   /** 防火墙状态 */
   export interface FirewallStatus {
     backend: 'ufw' | 'firewalld' | 'none';
+    available: boolean;
     active: boolean;
+    version?: string;
+    ipv6: boolean;
+    logging?: string;
+    defaultPolicy?: FirewallDefaultPolicy;
+    ruleCount: number;
     rules: FirewallRule[];
+    /** 生存线信息：SSH 端口、面板端口、风险提示 */
+    guard?: FirewallGuard;
+    hostChannel?: HostCapability;
+    message?: string;
   }
 
-  /** 防火墙规则 */
+  /** 默认策略 */
+  export interface FirewallDefaultPolicy {
+    incoming?: string;
+    outgoing?: string;
+    routed?: string;
+  }
+
+  /**
+   * 防火墙规则。
+   *
+   * <p>注意 action 与 direction 是分开的两个字段：ufw 的动作形如 `ALLOW IN` / `REJECT IN`，
+   * 早期版本把 `IN` 混进了 source，列表里会出现「来源 = IN 172.238.101.222」的污染数据。
+   */
   export interface FirewallRule {
-    id: string;
-    port: string;
-    action: string;
-    source: string;
+    /** ufw 规则编号（会随增删重排，删除时必须同时传 fingerprint） */
+    no: number;
+    to: string;
+    toKind: 'any' | 'port' | 'range' | 'multi' | 'app';
+    action: 'allow' | 'deny' | 'reject' | 'limit';
+    direction: 'in' | 'out' | 'fwd';
+    from: string;
+    sourceKind: 'any' | 'ip' | 'cidr';
+    ipv6: boolean;
+    comment: string;
+    /** panel=面板写入 / fail2ban / manual=人工带注释 / unknown=无注释 */
+    provenance: 'panel' | 'fail2ban' | 'manual' | 'unknown';
+    deletable: boolean;
+    /** to|action|from，删除时用于校验「编号指向的仍是同一条规则」 */
+    fingerprint: string;
   }
 
-  /** 防火墙规则写入 */
+  /** 规则目标（四种形态对应 ufw 的四种写法） */
+  export interface FirewallRuleTarget {
+    kind: 'port' | 'range' | 'multi' | 'any';
+    port?: number;
+    portEnd?: number;
+    ports?: number[];
+  }
+
+  /** 防火墙规则写入/删除请求体 */
   export interface FirewallRuleBody {
-    port: number;
-    protocol: 'tcp' | 'udp';
-    action: 'allow' | 'deny';
+    target?: FirewallRuleTarget;
+    protocol?: 'tcp' | 'udp' | 'any';
+    action?: 'allow' | 'deny' | 'reject' | 'limit';
     source?: string;
+    comment?: string;
+    /** 高危操作的二次确认关键字，如 "SSH 22" */
+    confirm?: string;
+    /** 删除用：规则编号 */
+    no?: number;
+    /** 删除用：规则指纹 */
+    fingerprint?: string;
+    /** 删除外部托管规则（fail2ban）时的强制确认 */
+    force?: boolean;
+  }
+
+  /** 生存线信息（防锁死） */
+  export interface FirewallGuard {
+    sshPorts: number[];
+    panelPorts: number[];
+    clientIp?: string;
+    foreignRuleCount: number;
+    sshAllowed: boolean;
+    warnings: string[];
+  }
+
+  /** 防火墙操作结果：命令原文 + 差异 + 看门狗 */
+  export interface FirewallActionResult {
+    ok: boolean;
+    message?: string;
+    command?: string;
+    changeId?: string;
+    diff: string[];
+    watchdog?: FirewallWatchdog;
+  }
+
+  /** 看门狗状态（变更保护倒计时） */
+  export interface FirewallWatchdog {
+    id: string;
+    secondsLeft: number;
+    expiresAt?: string;
+    reason?: string;
+  }
+
+  /** 防火墙变更记录 */
+  export interface FirewallChange {
+    id: string;
+    backend: string;
+    op: string;
+    ruleDesc: string;
+    diffJson?: string;
+    beforeSnapshot?: string;
+    afterSnapshot?: string;
+    guardAck?: number;
+    watchdogSeconds?: number;
+    rollbackable?: number;
+    rolledBack?: number;
+    result?: number;
+    errorMsg?: string;
+    operator?: string;
+    createdAt?: string;
   }
 }
 
@@ -520,14 +617,114 @@ export async function clearCronLogsApi(id: string) {
 
 // ==================== 防火墙 ====================
 
+/** 防火墙状态：后端类型、开关、默认策略、规则清单、生存线信息 */
 export async function getFirewallStatusApi() {
   return requestClient.get<OpsApi.FirewallStatus>('/ops/firewall/status');
 }
 
-export async function addFirewallRuleApi(body: OpsApi.FirewallRuleBody) {
-  return requestClient.post('/ops/firewall/rule', body);
+/** 生存线信息：SSH 端口 / 面板端口 / 来源 IP / 风险提示 */
+export async function getFirewallGuardApi() {
+  return requestClient.get<OpsApi.FirewallGuard>('/ops/firewall/guard');
 }
 
+/** ufw show raw 原文（排障用） */
+export async function getFirewallRawApi() {
+  return requestClient.get<string>('/ops/firewall/raw');
+}
+
+export async function addFirewallRuleApi(body: OpsApi.FirewallRuleBody) {
+  return requestClient.post<OpsApi.FirewallActionResult>(
+    '/ops/firewall/rule',
+    body,
+  );
+}
+
+/** 按编号 + 指纹删除（指纹不匹配 = 编号已漂移，后端拒绝） */
 export async function deleteFirewallRuleApi(body: OpsApi.FirewallRuleBody) {
-  return requestClient.delete('/ops/firewall/rule', { data: body });
+  return requestClient.request<OpsApi.FirewallActionResult>(
+    '/ops/firewall/rule',
+    { method: 'DELETE', data: body },
+  );
+}
+
+/** 启用防火墙（L3，默认挂看门狗） */
+export async function enableFirewallApi(confirm?: string) {
+  return requestClient.post<OpsApi.FirewallActionResult>(
+    '/ops/firewall/enable',
+    { confirm },
+  );
+}
+
+/** 停用防火墙（L3） */
+export async function disableFirewallApi(confirm?: string) {
+  return requestClient.post<OpsApi.FirewallActionResult>(
+    '/ops/firewall/disable',
+    { confirm },
+  );
+}
+
+/** 设置默认策略（L3） */
+export async function setFirewallDefaultPolicyApi(body: {
+  incoming?: string;
+  outgoing?: string;
+  routed?: string;
+  confirm?: string;
+}) {
+  return requestClient.post<OpsApi.FirewallActionResult>(
+    '/ops/firewall/default-policy',
+    body,
+  );
+}
+
+export async function reloadFirewallApi() {
+  return requestClient.post<OpsApi.FirewallActionResult>('/ops/firewall/reload');
+}
+
+/** 变更历史（含前后快照与 diff） */
+export async function getFirewallChangesApi(params: {
+  pageNum?: number;
+  pageSize?: number;
+}) {
+  return requestClient.get<{
+    records: OpsApi.FirewallChange[];
+    total: number;
+    pageNum: number;
+    pageSize: number;
+  }>('/ops/firewall/changes', { params });
+}
+
+/** 单次变更详情（diff / 前后快照 / undo 命令） */
+export async function getFirewallChangeDetailApi(id: string) {
+  return requestClient.get<OpsApi.FirewallChange>(
+    `/ops/firewall/changes/${id}`,
+  );
+}
+
+/** 回滚某次变更（L3） */
+export async function rollbackFirewallChangeApi(id: string, confirm?: string) {
+  return requestClient.post<OpsApi.FirewallActionResult>(
+    `/ops/firewall/changes/${id}/rollback`,
+    { confirm },
+  );
+}
+
+/** 看门狗倒计时：未启用返回 null */
+export async function getFirewallWatchdogApi() {
+  return requestClient.get<OpsApi.FirewallWatchdog>('/ops/firewall/guard/watchdog');
+}
+
+/** 手动注册看门狗 */
+export async function armFirewallWatchdogApi(body: {
+  seconds?: number;
+  action?: string;
+}) {
+  return requestClient.post<OpsApi.FirewallWatchdog>(
+    '/ops/firewall/guard/watchdog',
+    body,
+  );
+}
+
+/** 「保留变更」——撤销看门狗，不再自动回滚 */
+export async function confirmFirewallWatchdogApi() {
+  return requestClient.post('/ops/firewall/guard/confirm');
 }

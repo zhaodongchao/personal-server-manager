@@ -417,7 +417,7 @@ function openDetail(row: OpsApi.CronJob) {
           :loading="acting === `status-${(row as OpsApi.CronJob).id}`"
           :disabled="!canStatus || !writable"
           size="small"
-          @change="(v: boolean) => onToggleStatus(row as OpsApi.CronJob, v)"
+          @change="(v: unknown) => onToggleStatus(row as OpsApi.CronJob, !!v)"
         />
       </template>
 

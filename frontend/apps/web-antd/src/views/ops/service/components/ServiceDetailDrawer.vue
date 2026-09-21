@@ -126,9 +126,6 @@ async function copy(text: string, label: string) {
   }
 }
 
-const busy = computed(
-  () => !!props.acting && props.acting.startsWith(`${props.name}:`),
-);
 </script>
 
 <template>

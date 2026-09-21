@@ -736,7 +736,7 @@ onMounted(async () => {
                 更多 ▾
               </Button>
               <template #overlay>
-                <Menu @click="({ key }: { key: string }) => fireAction(row, key)">
+                <Menu @click="(info: any) => fireAction(row, String(info.key))">
                   <MenuItem key="restart">重启</MenuItem>
                   <MenuItem key="try-restart">仅在运行中时重启</MenuItem>
                   <MenuItem key="reload">重载配置</MenuItem>
