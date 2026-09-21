@@ -98,4 +98,21 @@ public class HostChannelService {
         String text = result.text();
         return text.isBlank() ? result.getStderr() : text;
     }
+
+    /** 调用宿主 op 并返回命令原文（指定超时秒数；0 表示用默认超时），退出码非 0 时抛错 */
+    public String callText(String op, Map<String, Object> args, String label, long timeoutSeconds) {
+        HostResult result = call(op, args, label, timeoutSeconds);
+        if (result.getExitCode() != 0) {
+            throw new ServiceException(ErrorCode.ERROR.getCode(),
+                    label + "失败：" + result.errorText());
+        }
+        return result.text();
+    }
+
+    /** 调用宿主 op 并返回命令原文（指定超时秒数；0 表示用默认超时），允许非 0 退出码 */
+    public String callTextLenient(String op, Map<String, Object> args, String label, long timeoutSeconds) {
+        HostResult result = call(op, args, label, timeoutSeconds);
+        String text = result.text();
+        return text.isBlank() ? result.getStderr() : text;
+    }
 }
