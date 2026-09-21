@@ -46,6 +46,7 @@
 | 4xxx | 文件 | `4001` 路径越权、`4002` 目标已存在、`4003` 源路径不存在、`4004` 根目录受限、`4005` 文件过大、`4006` 非文本、`4007` 压缩格式不支持、`4008` 回收站记录失效、`4009` 权限非法、`4010` 目录非空 |
 | 5xxx | 运维 | `5001` 命令不在白名单、`5002` 超时、`5003` 进程不存在、`5004` 服务不可管理、`5005` cron 非法、`5006` 任务不存在、`5007` 无可用防火墙、`5008` 规则不存在、`5009` 宿主通道不可用、`5010` 宿主通道版本不匹配（已降级只读）、`5011` 服务操作被保护清单拦截、`5012` 计划任务执行中（并发互斥）、`5013` cron 补跑次数超上限、`5014` 防火墙规则编号已变化、`5015` 该操作会切断 SSH/面板访问（需二次确认）、`5016` 目标规则由外部程序托管（禁止面板删除）、`5017` 防火墙变更不可回滚 |
 | 6xxx | 应用栈 | `6001` Docker 不可用、`6002` 资源不存在、`6003` 域名已存在、`6004` Nginx 不可用、`6005` 配置校验失败、`6006` MySQL 管理连接不可用、`6007` 标识符非法、`6008` 库已存在、`6009` 库不存在 |
+| 6xxx | Nginx 管理 | `6010` 实例不存在、`6011` 危险操作需二次确认（confirm 关键字）、`6012` ACME 模式不支持、`6013` DNS-01 仅支持通配符、`6014` 证书不存在或状态非法、`6015` 配置渲染/校验失败 |
 
 ### 4. 分页结构与参数
 
@@ -607,6 +608,64 @@ FirewallRule {
 面板容器（eclipse-temurin:21-jre）里没有 systemctl / journalctl / ufw / df，
 过去这些功能在容器内空转。通道不可用时（未安装代理 / socket 不可达）写接口返回 `5009`，
 前端整页只读降级并给出安装指引。通道部署见 `documents/production-deployment.md` 第十一节。
+
+### 6. Nginx 管理 `ops/nginx`
+
+> 静态配置生成型：Web 录入意图 → 存库 → FreeMarker 渲染 conf → 写入 nginx 托管目录 →
+> `nginx -t` 校验 → `reload` 生效；证书走内置 ACME（HTTP-01 / DNS-01 通配符）。
+> 本质 = 配置 CRUD + 渲染器 + 进程管理器。可管理「可配置实例」或自动探测的本机 nginx。
+
+**通道分工（关键）**：配置文件经 `/www` 挂载点写入（容器以 root 运行），
+`nginx -t` / `-s reload` / certbot 经宿主通道 `psm-hostagent` 在宿主机以 root 执行
+（容器内没有这些命令）。通道不可用时写接口返回 `6010` 类错误并前端只读降级。
+
+| 方法 | 路径 | 权限 | 说明 |
+| ---- | ---- | ---- | ---- |
+| GET | `/instance/list` | `ops:nginx:instance` | 实例列表 |
+| GET | `/instance/detect` | `ops:nginx:instance` | 探测本机 nginx（不落库） |
+| POST | `/instance` | `ops:nginx:instance` | 新建/保存实例（auto 探测或 manual 指定） |
+| PUT | `/instance` | `ops:nginx:instance` | 更新实例 |
+| DELETE | `/instance/{id}` | `ops:nginx:instance` | 删除实例（高危，`confirm` 域名） |
+| PUT | `/instance/{id}/default` | `ops:nginx:instance` | 设为默认实例 |
+| GET | `/status` | `ops:nginx:instance` | 运行态 + 版本 + 能力（含 certbot 版本、临期证书） |
+| GET | `/existing` | `ops:nginx:instance` | 只读列出既有 vhost（宝塔等） |
+| GET | `/site/preview` | `ops:nginx:site` | 渲染预览（不落盘） |
+| GET | `/site/page` | `ops:nginx:site` | 站点分页 |
+| POST | `/site` | `ops:nginx:site` | 新建站点（`nginx -t` + reload，记回滚快照） |
+| PUT | `/site` | `ops:nginx:site` | 更新站点 |
+| DELETE | `/site/{id}` | `ops:nginx:site` | 删除站点（高危，`confirm` 域名） |
+| PUT | `/site/{id}/status/{0|1}` | `ops:nginx:site` | 启停站点 |
+| GET | `/site/{id}/conf` | `ops:nginx:site` | 已渲染配置原文 |
+| GET | `/upstream/page` | `ops:nginx:upstream` | 上游组分页 |
+| POST | `/upstream` | `ops:nginx:upstream` | 新建上游组 |
+| PUT | `/upstream` | `ops:nginx:upstream` | 更新上游组 |
+| DELETE | `/upstream/{id}` | `ops:nginx:upstream` | 删除上游组（高危） |
+| GET | `/stream/page` | `ops:nginx:stream` | 四层转发分页 |
+| POST | `/stream` | `ops:nginx:stream` | 新建四层转发（TCP/UDP） |
+| PUT | `/stream` | `ops:nginx:stream` | 更新四层转发 |
+| DELETE | `/stream/{id}` | `ops:nginx:stream` | 删除四层转发（高危） |
+| PUT | `/stream/{id}/status/{0|1}` | `ops:nginx:stream` | 启停四层转发 |
+| GET | `/cert/page` | `ops:nginx:cert` | 证书分页（**修复项：曾因 reserved-word 别名 500**） |
+| POST | `/cert/issue` | `ops:nginx:cert` | ACME 申请（mode=http01/dns01） |
+| POST | `/cert/{id}/renew` | `ops:nginx:cert` | 续期 |
+| GET | `/cert/{id}/status` | `ops:nginx:cert` | 证书状态（含到期日） |
+| POST | `/cert/{id}/dns-verify` | `ops:nginx:cert` | DNS-01 二步：唤醒 certbot 完成签发 |
+| POST | `/cert/upload` | `ops:nginx:cert` | 手动上传 PEM |
+| DELETE | `/cert/{id}` | `ops:nginx:cert` | 删除证书（高危） |
+| GET | `/log/list` | `ops:nginx:log` | 可查看日志清单 |
+| GET | `/log/tail` | `ops:nginx:log` | 日志 tail |
+| GET | `/change/page` | `ops:nginx:change` | 变更历史分页 |
+| GET | `/change/{id}` | `ops:nginx:change` | 变更详情（前后快照 + diff） |
+| POST | `/change/{id}/rollback` | `ops:nginx:change` | 回滚（高危，`confirm: ROLLBACK`） |
+| POST | `/reload` | `ops:nginx:manage` | `nginx -t && nginx -s reload` |
+| POST | `/test` | `ops:nginx:manage` | `nginx -t` 校验 |
+
+**ACME**：HTTP-01 经 webroot（站点 `:80` 块内自动注入 `location ^~ /.well-known/acme-challenge/`）；
+DNS-01 通配符两步流——首步 `issue` 返回需添加的 TXT 记录名/值（状态置 `pending`），用户添加后
+调 `dns-verify` 唤醒 certbot 并轮询 `acmeStatus` 直至签发（最长约 5 分钟）。每日 03:30 调度扫描
+临期（≤30 天）证书自动续期并刷新到期状态、临期/过期告警。**危险操作（删站/实例/证书/转发、回滚）
+需 `confirm` 关键字二次确认，错误码 `6011`。**
+
 
 ## 七、应用栈 `/api/v1/appstack`
 

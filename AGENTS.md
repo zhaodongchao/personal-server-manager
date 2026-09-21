@@ -215,7 +215,24 @@ ServerPanel 跑在容器里，但「服务管理 / 计划管理 / 防火墙管�
 - 新增「需要宿主机能力」的功能时，必须同时在 hostagent 白名单里加 op，并在
   `documents/api-spec.md` 第六节登记契约。
 
-## 7. Agent Team（智能体分工）
+## 7. Nginx 管理（运维工具 / server-ops）
+
+`server-ops` 的 `NginxController` + `NginxService` 提供「静态配置生成型」的 Nginx 管理：
+Web 录入 → 存库 → FreeMarker 渲染 conf → 写入托管目录 → `nginx -t` → `reload`。要点：
+
+- **实例可配置**：`OpsNginxInstance` 记录可管理的 nginx（二进制路径 / prefix / 托管目录 /
+  证书目录 / webroot）；`detectMode=auto` 时从本机探测填充；不配则读默认实例，没有默认实例时整体探测本机 nginx。
+- **通道分工**：conf 文件经 `/www` 挂载写入（容器 root），`nginx -t`/`-s reload`/certbot 经
+  `psm-hostagent` 在宿主机 root 执行。后端统一 `hostChannel.call("nginx.*", ...)`。
+- **ACME**：HTTP-01（`nginx.acmeIssue` → certbot webroot）、DNS-01 通配符两步流
+  （`nginx.acmeDns01Issue` / `nginx.acmeDns01Verify` + 认证钩子脚本）。证书续期由
+  `NginxCertRenewScheduler`（每日 03:30）扫描触发。
+- **安全**：写配置前必 `nginx -t`，失败不 reload；每次写操作记 `OpsNginxChange`（前后快照 + diff），
+  危险操作需 `confirm` 关键字（防误删），可一键回滚。
+- **踩坑**：实体字段名会作为 MyBatis-Plus 的 SELECT 别名，`binary` 是 MySQL 保留字，
+  字段必须命名为 `binaryPath`（列 `binary_path`）否则 `SELECT ... AS binary` 报语法错（曾导致所有 nginx 列表 500）。
+
+## 8. Agent Team（智能体分工）
 
 项目配置 7 个自定义智能体，覆盖前后端全链路职责：
 

@@ -68,3 +68,22 @@
 - **根因 A**：ufw 的规则编号会随增删重排，编号不是稳定标识；且 `ufw allow 8080/tcp` 在开启 IPv6 时会写**两条**（本体 + `(v6)` 副本），只删一条会留下看不见的半条规则——若是 deny/reject，用户以为删干净了，v6 侧还在拦。
 - **修正**：删除改为「编号 + 指纹（`to|action|from`）」双校验，指纹不符返回 `5014`；删除时按同指纹连 IPv6 副本一并处理，并**先删大编号再删小编号**（每次删除都会重排编号）。回滚脚本 `specFromRule` 要与 `toKind` 用同一套判定——`TO_MULTI` 的 `[\d,]+` 同样能匹配单个端口，`39999/tcp` 会被误判成多端口，导致回滚脚本写成 `ports:[39999]` 而非 `port:39999`。
 - **教训**：外部系统的「编号」几乎都不是稳定标识，操作前要带内容指纹复核；成对存在的资源（IPv4/IPv6）要当作一个逻辑单元处理，否则永远清不干净。正则的多分支解析要在**所有使用点**共享同一判定顺序，不能各写各的。
+
+
+### 7. Nginx 管理：字段名即别名，MySQL 保留字会让整组列表 500
+- **现象**：`/api/v1/ops/nginx/cert/page`（以及所有 nginx 列表接口）返回 500，报 `near 'binary,...' you have an error in your SQL syntax`。
+- **根因**：MyBatis-Plus 用 Java 属性名作为 SELECT 别名。`OpsNginxInstance` 的 `binary` 属性生成 `SELECT ... binary_path AS binary`，而 `binary` 是 MySQL 保留字，整条 SQL 语法错误，所有依赖该表的列表接口全部 500。
+- **修正**：属性改名 `binary → binaryPath`（列名 `binary_path` 不变），彻底消除 `AS binary`；hostagent 返回的 `dataString("binary")` 读键保持不变。
+- **教训**：凡是数据库实体，属性名/别名务必避开 MySQL 保留字（binary、order、group、key、desc、status 等）；命名时想当然用 `binary` 当字段名，编译和服务启动都正常，只有真正 SELECT 时才炸，且是「全列表 500」级别的高危。
+
+### 8. 配置生成型功能：写前必 nginx -t，且要分清「容器内」与「宿主机」
+- **现象**：Nginx 管理的 `nginx -t` / `reload` / certbot 不能在面板容器里跑（容器是 jre 镜像，没有 nginx/certbot）。
+- **根因**：与防火墙/服务管理同源——容器化面板操作的是宿主机资源。直接 `docker exec` 或容器内执行会空转或失败。
+- **修正**：配置内容经 `/www` 挂载点写入宿主机（容器 root），进程管理动作统一走 `psm-hostagent` 的 `nginx.*` / `certbot` 操作；写配置前先 `nginx -t`，失败绝不 reload。
+- **教训**：配置生成型（Nginx 管理、站点管理）的「渲染」与「执行」要拆开——渲染可在容器，但 `-t/reload/证书申请` 必须落到宿主机；部署设计上就把这两类通道分清，否则又是「页面正常、执行必败」。
+
+### 9. DNS-01 通配符不能一步到位，必须两步 TXT + 后端轮询
+- **现象**：certbot 的 `--manual --preferred-challenges dns-01` 需要用户在 DNS 添加 TXT 后才能继续，无法在单次 HTTP 请求里同步完成。
+- **根因**：DNS 传播是异步的，certbot 在认证钩子里阻塞等待 TXT 生效；面板若同步等待会卡死 HTTP 请求。
+- **修正**：拆成两步——`issue` 只启动 certbot 并立即返回需添加的 TXT 记录名/值（状态置 `pending`）；用户添加后调 `dns-verify`，后端写 `.ready` 唤醒钩子并轮询 `acmeStatus` 直至签发（最长约 5 分钟）。前端 `certId` 经 `NginxActionResult.changeId` 回传（复用字段，注意语义）。
+- **教训**：任何依赖外部异步传播（DNS/邮件/第三方回调）的 ACME/验证流程，后端都不要同步阻塞 HTTP；用「发起→返回凭证→回调/轮询」的两段式，前端配 loading + 状态轮询。
