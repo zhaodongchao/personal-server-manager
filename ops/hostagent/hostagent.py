@@ -283,6 +283,38 @@ def op(name):
 
 # ---------------------------- 主机 / 能力 ---------------------------- #
 
+# 允许经 host.exec 执行的程序名（与后端 CommandExecutor 的内置白名单保持一致）。
+# 刻意不含任何 shell 解释器：host.exec 只接受 argv 数组，即便白名单被绕过也拼不出 shell。
+EXEC_WHITELIST = frozenset({
+    'ps', 'kill', 'systemctl', 'journalctl', 'nginx', 'ufw', 'firewall-cmd',
+    'mysql', 'mysqldump', 'mysqladmin', 'pvs', 'vgs', 'lvs', 'pvdisplay',
+    'vgdisplay', 'lvdisplay', 'lsblk', 'fdisk', 'df', 'findmnt',
+})
+
+
+@op('host.exec')
+def op_host_exec(args):
+    """在宿主机上执行一条白名单命令（argv 数组，绝不经过 shell）。
+
+    为计划任务提供「真能跑起来」的执行通道：面板容器里没有 systemctl / ufw / mysql / df
+    等系统命令，在容器内执行必然失败。这里守住三条边界：
+      1) 只接受 argv 数组，不接受命令字符串 —— 从根上杜绝 shell 注入；
+      2) 程序名必须在白名单内，且解析为绝对路径再执行；
+      3) 超时由代理侧终止进程，输出按上限截断。
+    """
+    argv = args.get('argv')
+    if not isinstance(argv, list) or not argv:
+        raise OpError('bad-request', 'argv 必须是非空数组')
+    if len(argv) > 64:
+        raise OpError('bad-request', 'argv 参数过多（上限 64）')
+    argv = [str(a) for a in argv]
+    prog = argv[0]
+    if prog not in EXEC_WHITELIST:
+        raise OpError('cmd-not-allowed', '命令不在白名单内: %s' % prog)
+    argv[0] = require_tool(prog)
+    return run(argv, timeout=args.get('timeout'))
+
+
 @op('host.ping')
 def op_host_ping(args):
     return ok(data={'agentVersion': VERSION, 'protocol': PROTOCOL_VERSION,

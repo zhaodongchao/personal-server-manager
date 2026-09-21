@@ -109,6 +109,17 @@ public class CommandExecutor {
     }
 
     /**
+     * 当前生效的命令白名单（内置 + 配置扩展）。
+     *
+     * <p>供「可执行命令白名单」接口返回给前端做表单下拉/提示，避免前端硬编码后与后端漂移。
+     * 注意：白名单只解决「允许不允许」；命令实际在<b>宿主机</b>上执行，
+     * 宿主机是否真的装了这个命令要看宿主通道的能力探测结果。
+     */
+    public Set<String> getWhitelist() {
+        return whitelist;
+    }
+
+    /**
      * 同步执行（argv 数组形式，不经过任何 shell），使用默认超时。
      *
      * @throws ServiceException 命令不在白名单 / 启动失败

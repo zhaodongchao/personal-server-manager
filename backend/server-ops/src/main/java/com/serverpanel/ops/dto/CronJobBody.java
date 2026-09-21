@@ -8,6 +8,9 @@ import lombok.Data;
 
 /**
  * 计划任务创建/更新请求体。
+ *
+ * @author zhaodc
+ * @since 2026-09-21 UTC+8
  */
 @Data
 public class CronJobBody {
@@ -34,6 +37,19 @@ public class CronJobBody {
     @Min(0)
     @Max(1)
     private Integer status;
+
+    /** 错过执行策略：skip（默认）/ run_once / catch_up */
+    @Size(max = 16, message = "错过执行策略非法")
+    private String misfirePolicy;
+
+    /** 并发策略：skip（默认）/ queue / parallel */
+    @Size(max = 16, message = "并发策略非法")
+    private String overlapPolicy;
+
+    /** 连续失败自动停用阈值，0=不自动停用 */
+    @Min(value = 0, message = "阈值不能为负")
+    @Max(value = 99, message = "阈值过大")
+    private Integer maxFail;
 
     @Size(max = 255, message = "备注过长")
     private String remark;
