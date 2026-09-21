@@ -23,5 +23,10 @@
       <groupId>com.cronutils</groupId>
       <artifactId>cron-utils</artifactId>
     </dependency>
+    <!-- Nginx 站点配置模板 -->
+    <dependency>
+      <groupId>org.freemarker</groupId>
+      <artifactId>freemarker</artifactId>
+    </dependency>
   </dependencies>
 </project>

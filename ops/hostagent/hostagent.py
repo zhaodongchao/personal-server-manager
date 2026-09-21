@@ -738,6 +738,154 @@ def op_firewall_version(args):
     return run([_fw_argv(), '--version'], timeout=15)
 
 
+# ---------------------------- nginx ---------------------------- #
+
+def _nginx_argv():
+    return require_tool('nginx')
+
+
+def _certbot_path():
+    return tool('certbot')
+
+
+def _certbot_issue_argv(args):
+    domain = str(args.get('domain') or '').strip()
+    email = str(args.get('email') or '').strip()
+    webroot = str(args.get('webroot') or '').strip()
+    config_dir = str(args.get('configDir') or '/etc/letsencrypt').strip()
+    if not domain:
+        raise OpError('bad-request', '缺少 domain')
+    domains = [d.strip() for d in domain.split(',') if d.strip()]
+    if not domains:
+        raise OpError('bad-request', 'domain 非法')
+    for d in domains:
+        if not re.match(r'^(\*\.)?[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$', d):
+            raise OpError('bad-request', '域名非法: %s' % d)
+    if not webroot or webroot.startswith('-') or '..' in webroot:
+        raise OpError('bad-request', 'webroot 非法')
+    if '..' in config_dir or not config_dir.startswith('/'):
+        raise OpError('bad-request', 'configDir 非法')
+    cb = _certbot_path()
+    if not cb:
+        raise OpError('tool-missing', '宿主机缺少 certbot')
+    argv = [cb, 'certonly', '--webroot', '-w', webroot,
+            '--email', email or 'admin@localhost', '--agree-tos',
+            '--non-interactive', '--no-eff-email',
+            '--config-dir', config_dir + '/le',
+            '--work-dir', config_dir + '/le/work',
+            '--logs-dir', config_dir + '/le/logs']
+    for d in domains:
+        argv += ['-d', d]
+    return argv
+
+
+@op('nginx.detect')
+def op_nginx_detect(args):
+    nginx = tool('nginx')
+    if not nginx:
+        return ok(data={'found': False, 'reason': 'nginx 未安装'})
+    ver = run([nginx, '-V'], timeout=15)
+    blob = (ver.get('stderr') or '') + '\n' + (ver.get('stdout') or '')
+
+    def _arg(name):
+        m = re.search(r'--%s=(\S+)' % re.escape(name), blob)
+        return m.group(1).rstrip(',') if m else None
+
+    version = None
+    m = re.search(r'nginx version: nginx/([\d.]+)', blob)
+    if m:
+        version = m.group(1)
+    certbot = None
+    cb = tool('certbot')
+    if cb:
+        r = run([cb, '--version'], timeout=15)
+        mm = re.search(r'(\d+\.\d+(?:\.\d+)?)', (r.get('stdout') or '') + (r.get('stderr') or ''))
+        if mm:
+            certbot = mm.group(1)
+    prefix = _arg('prefix')
+    # nginx 只在编译时给了 --prefix 时，其余路径走默认派生规则（BT nginx 即如此）
+    def _or_default(val, tail):
+        return val if val else (os.path.join(prefix, tail) if prefix else None)
+    return ok(data={
+        'found': True,
+        'binary': nginx,
+        'version': version,
+        'prefix': prefix,
+        'confPath': _or_default(_arg('conf-path'), 'conf/nginx.conf'),
+        'pidPath': _or_default(_arg('pid-path'), 'logs/nginx.pid'),
+        'errorLog': _or_default(_arg('error-log-path'), 'logs/error.log'),
+        'httpLog': _or_default(_arg('http-log-path'), 'logs/access.log'),
+        'certbotVersion': certbot,
+    })
+
+
+@op('nginx.test')
+def op_nginx_test(args):
+    conf_path = str(args.get('confPath') or '').strip()
+    argv = [_nginx_argv(), '-t']
+    if conf_path:
+        if not conf_path.startswith('/') or conf_path.startswith('-'):
+            raise OpError('bad-request', 'confPath 必须是绝对路径')
+        argv += ['-c', conf_path]
+    return run(argv, timeout=30)
+
+
+@op('nginx.reload')
+def op_nginx_reload(args):
+    return run([_nginx_argv(), '-s', 'reload'], timeout=30)
+
+
+@op('nginx.certbotVersion')
+def op_nginx_certbot_version(args):
+    cb = _certbot_path()
+    if not cb:
+        return ok(data={'found': False})
+    r = run([cb, '--version'], timeout=15)
+    m = re.search(r'(\d+\.\d+(?:\.\d+)?)', (r.get('stdout') or '') + (r.get('stderr') or ''))
+    return ok(r, data={'found': True, 'version': m.group(1) if m else None})
+
+
+@op('nginx.acmeIssue')
+def op_nginx_acme_issue(args):
+    argv = _certbot_issue_argv(args)
+    return merge(run(argv, timeout=120), {'command': ' '.join(argv)})
+
+
+@op('nginx.acmeRenew')
+def op_nginx_acme_renew(args):
+    domain = str(args.get('domain') or '').strip()
+    config_dir = str(args.get('configDir') or '/etc/letsencrypt').strip()
+    cb = _certbot_path()
+    if not cb:
+        raise OpError('tool-missing', '宿主机缺少 certbot')
+    argv = [cb, 'renew', '--cert-name', domain,
+            '--non-interactive', '--quiet',
+            '--config-dir', config_dir + '/le',
+            '--work-dir', config_dir + '/le/work',
+            '--logs-dir', config_dir + '/le/logs']
+    return merge(run(argv, timeout=180), {'command': ' '.join(argv)})
+
+
+@op('nginx.acmeStatus')
+def op_nginx_acme_status(args):
+    domain = str(args.get('domain') or '').strip()
+    config_dir = str(args.get('configDir') or '/etc/letsencrypt').strip()
+    live = os.path.join(config_dir, 'le', 'live', domain)
+    if not os.path.isdir(live):
+        return ok(data={'found': False})
+    cert_file = os.path.join(live, 'fullchain.pem')
+    not_after = None
+    if os.path.isfile(cert_file):
+        r = run(['openssl', 'x509', '-enddate', '-noout', '-in', cert_file], timeout=15)
+        m = re.search(r'notAfter=(.+)', (r.get('stdout') or ''))
+        if m:
+            not_after = m.group(1).strip()
+    return ok(data={'found': True, 'certPath': cert_file,
+                    'keyPath': os.path.join(live, 'privkey.pem'),
+                    'notAfter': not_after})
+
+
+
 # ---------------------------- 看门狗（防锁死自动回滚） ---------------------------- #
 
 def _pending_file(wid: str) -> str:

@@ -7,7 +7,7 @@ import lombok.Getter;
  * 全局错误码。
  *
  * <p>分段规则：0 成功；4xx/5xx 通用 HTTP 语义；1xxx 认证；2xxx 系统管理；
- * 3xxx 监控；4xxx 文件；5xxx 运维；6xxx 应用栈。
+ * 3xxx 监控；4xxx 文件；5xxx 运维；6xxx 应用栈与 Nginx 管理。
  */
 @Getter
 @AllArgsConstructor
@@ -87,7 +87,15 @@ public enum ErrorCode {
     MYSQL_ADMIN_UNAVAILABLE(6006, "MySQL 管理连接不可用"),
     DB_IDENTIFIER_INVALID(6007, "库名/用户名/密码不符合规则"),
     DB_EXISTS(6008, "数据库已存在"),
-    DB_NOT_FOUND(6009, "数据库不存在");
+    DB_NOT_FOUND(6009, "数据库不存在"),
+
+    // ===== Nginx 管理 6010+ =====
+    NGINX_INSTANCE_NOT_FOUND(6010, "Nginx 实例不存在"),
+    NGINX_GUARD_TRIGGERED(6011, "该操作存在风险，需二次确认"),
+    NGINX_DOMAIN_CONFLICT(6012, "域名已被其它站点使用"),
+    NGINX_UPSTREAM_IN_USE(6013, "上游组仍被站点引用，无法删除"),
+    NGINX_CERT_IN_USE(6014, "证书仍被站点引用，无法删除"),
+    NGINX_STREAM_PORT_CONFLICT(6015, "监听端口已被其它转发占用");
 
     private final int code;
     private final String message;
