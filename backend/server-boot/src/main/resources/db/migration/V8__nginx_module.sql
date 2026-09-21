@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS ops_nginx_instance (
   id            BIGINT       NOT NULL PRIMARY KEY COMMENT '雪花 ID',
   name          VARCHAR(64)  NOT NULL COMMENT '实例名',
   detect_mode   VARCHAR(16)  NOT NULL DEFAULT 'auto' COMMENT 'auto/manual',
-  binary        VARCHAR(255) NULL COMMENT 'nginx 可执行路径',
+  binary_path   VARCHAR(255) NULL COMMENT 'nginx 可执行路径',
   prefix        VARCHAR(255) NULL COMMENT '--prefix',
   conf_path     VARCHAR(255) NULL COMMENT '主配置 nginx.conf 绝对路径',
   managed_dir   VARCHAR(255) NULL COMMENT '面板托管站点目录',

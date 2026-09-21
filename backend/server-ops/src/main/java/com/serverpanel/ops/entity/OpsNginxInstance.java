@@ -1,6 +1,7 @@
 package com.serverpanel.ops.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
@@ -25,7 +26,8 @@ public class OpsNginxInstance {
     /** auto（探测生成）/ manual（手工指定） */
     private String detectMode;
 
-    /** nginx 可执行路径 */
+    /** nginx 可执行路径（binary 为 MySQL 保留字，故列名用 binary_path） */
+    @TableField("binary_path")
     private String binary;
 
     /** --prefix */
