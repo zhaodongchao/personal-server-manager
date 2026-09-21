@@ -64,7 +64,10 @@ fi
 # ---------- 3. 安装 systemd 单元 ----------
 ${SUDO} -n /usr/bin/cp -f "${TMP_DIR}/psm-hostagent.service" "${UNIT}"
 ${SUDO} -n /usr/bin/systemctl daemon-reload
-${SUDO} -n /usr/bin/systemctl enable --now psm-hostagent.service
+${SUDO} -n /usr/bin/systemctl enable psm-hostagent.service
+# 幂等升级必须 restart：只做 enable --now 时，已运行的服务不会重新加载改动过的
+# 主程序，会让「升级成功」变成「仍在跑旧代码」。
+${SUDO} -n /usr/bin/systemctl restart psm-hostagent.service
 log 'systemd 单元已启用'
 
 # ---------- 4. 自检 ----------

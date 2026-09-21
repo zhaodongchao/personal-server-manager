@@ -13,9 +13,13 @@ RestartSec=2
 TimeoutStopSec=10
 KillMode=control-group
 
-# 运行时目录：/run/psm-hostagent（套接字所在），仅本机可访问
+# 运行时目录：/run/psm-hostagent（套接字所在），仅本机可访问。
+# RuntimeDirectoryPreserve=yes 是**必须**的：面板容器把本目录 bind mount 进容器，
+# 若允许 systemd 在 restart 时删除并重建该目录，容器里的挂载点会指向已被删除的旧
+# inode，表现为「代理明明在跑、容器内却看不到 agent.sock」，且必须重启容器才能恢复。
 RuntimeDirectory=psm-hostagent
 RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
 StateDirectory=psm-hostagent
 StateDirectoryMode=0750
 ConfigurationDirectory=psm-hostagent

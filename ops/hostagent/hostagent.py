@@ -90,7 +90,12 @@ TOOL_CANDIDATES = {
     'python3': ['/usr/bin/python3', 'python3'],
 }
 
-UNIT_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.@:-]{0,120}$')
+# systemd 会把 unit 名里的 `-` 转义成 `\x2d`、`/` 转义成 `-`，所以**合法 unit 名可以
+# 含反斜杠**（本机实例：systemd-fsck@dev-debian\x2dvg-docker_data.service），且根挂载单元
+# `-.mount` 以 `-` 开头。旧正则拒绝这两类名字，而面板按 80 个 unit 分片查询，**一个名字非法
+# 就整片失败**，表现为「列表里部分单元的内存/运行时长/重启次数全为 null」。
+# 仍然严格排除空格、引号、`;`、`|`、`$`、`*`、`?`、`[`、`]`、`/` —— 注入与路径穿越照样挡死。
+UNIT_RE = re.compile(r'^[A-Za-z0-9_@\\-][A-Za-z0-9_.@:\\-]{0,254}$')
 SERVICE_ACTIONS = {
     'start', 'stop', 'restart', 'reload', 'try-restart',
     'enable', 'disable', 'mask', 'unmask', 'reset-failed', 'kill',
@@ -417,6 +422,16 @@ def op_service_show(args):
     return run(argv, timeout=60)
 
 
+@op('service.dependencies')
+def op_service_dependencies(args):
+    name = valid_unit(args.get('name'))
+    argv = [require_tool('systemctl'), 'list-dependencies', '--plain', '--no-pager']
+    if args.get('reverse'):
+        argv.append('--reverse')
+    argv.append(name)
+    return run(argv, timeout=45)
+
+
 @op('service.status')
 def op_service_status(args):
     name = valid_unit(args.get('name'))
@@ -449,8 +464,13 @@ def op_service_logs(args):
         lines = max(1, min(int(lines), MAX_LINES))
     except (TypeError, ValueError):
         lines = 200
+    fmt = str(args.get('format') or 'short-iso')
+    if fmt not in ('json', 'short-iso', 'short', 'short-precise', 'cat'):
+        raise OpError('bad-request', '不支持的日志格式: %r' % (fmt,))
     argv = [require_tool('journalctl'), '-u', name, '-n', str(lines),
-            '--no-pager', '-o', 'short-iso', '--no-hostname']
+            '--no-pager', '-o', fmt]
+    if fmt != 'json':
+        argv.append('--no-hostname')
     since = valid_iso(args.get('since'), 'since')
     until = valid_iso(args.get('until'), 'until')
     if since:

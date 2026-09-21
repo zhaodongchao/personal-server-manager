@@ -61,9 +61,17 @@ import tools.jackson.databind.ObjectMapper;
 @RequiredArgsConstructor
 public class ServiceService {
 
-    /** 仅允许常规 unit 名，杜绝参数注入与路径穿越（systemctl 会把 * ? [ 当通配符，必须挡住） */
+    /**
+     * 允许的 unit 名。
+     *
+     * <p>systemd 会把名字里的 `-` 转义为 `\x2d`、`/` 转义为 `-`，因此**合法 unit 名可以含
+     * 反斜杠**（本机实例：systemd-fsck@dev-debian\x2dvg-docker_data.service），且根挂载单元
+     * `-.mount` 以 `-` 开头，故不能假设首字符必为字母数字。仍严格排除空格、引号、`;`、`|`、
+     * `$`、`*`、`?`、`[`、`]`、`/`，杜绝参数注入与路径穿越；并保留 `.service` 后缀约束，
+     * 因为本页只管理 service 类单元。
+     */
     private static final Pattern UNIT_NAME =
-            Pattern.compile("^[A-Za-z0-9][A-Za-z0-9_.@:-]{0,120}\\.service$");
+            Pattern.compile("^[A-Za-z0-9_@\\\\-][A-Za-z0-9_.@:\\\\-]{0,250}\\.service$");
 
     /** 面板允许的 systemctl 子命令 */
     private static final Set<String> ACTIONS = Set.of(
