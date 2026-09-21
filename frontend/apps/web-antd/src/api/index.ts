@@ -3,6 +3,7 @@ export * from './appstack';
 export * from './dashboard';
 export * from './file';
 export * from './monitor';
+export * from './nginx';
 export * from './ops';
 export * from './preference';
 export * from './system/config';
