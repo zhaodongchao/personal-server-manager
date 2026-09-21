@@ -68,6 +68,16 @@ public enum ErrorCode {
     FIREWALL_UNAVAILABLE(5007, "未检测到可用的防火墙(ufw/firewalld)"),
     FIREWALL_RULE_NOT_FOUND(5008, "防火墙规则不存在"),
 
+    HOST_CHANNEL_UNAVAILABLE(5009, "宿主执行通道不可用，请先在宿主机安装 psm-hostagent"),
+    HOST_CHANNEL_PROTOCOL_MISMATCH(5010, "宿主通道协议版本不匹配，已降级为只读"),
+    SERVICE_PROTECTED(5011, "该服务在保护清单内，需危险操作权限并二次确认"),
+    CRON_JOB_RUNNING(5012, "计划任务正在执行中，已按并发策略跳过本次触发"),
+    CRON_MISFIRE_LIMIT(5013, "错过的执行次数超出补跑上限"),
+    FIREWALL_RULE_CHANGED(5014, "防火墙规则已变化，请刷新后重试"),
+    FIREWALL_GUARD_TRIGGERED(5015, "该变更会切断当前 SSH / 面板访问，需二次确认"),
+    FIREWALL_FOREIGN_RULE(5016, "该规则由外部程序（fail2ban 等）管理，面板禁止直接删除"),
+    FIREWALL_ROLLBACK_UNAVAILABLE(5017, "该变更不可回滚：快照缺失或已被后续变更覆盖"),
+
     // ===== 应用栈 6xxx =====
     DOCKER_UNAVAILABLE(6001, "Docker 服务不可用"),
     DOCKER_RESOURCE_NOT_FOUND(6002, "容器或镜像不存在"),

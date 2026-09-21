@@ -1,0 +1,41 @@
+[Unit]
+Description=ServerPanel Host Agent (panel-side privileged host executor)
+Documentation=file:/usr/local/lib/psm-hostagent/hostagent.py
+After=local-fs.target
+Before=shutdown.target
+Conflicts=shutdown.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/lib/psm-hostagent/hostagent.py serve
+Restart=always
+RestartSec=2
+TimeoutStopSec=10
+KillMode=control-group
+
+# 运行时目录：/run/psm-hostagent（套接字所在），仅本机可访问
+RuntimeDirectory=psm-hostagent
+RuntimeDirectoryMode=0755
+StateDirectory=psm-hostagent
+StateDirectoryMode=0750
+ConfigurationDirectory=psm-hostagent
+ConfigurationDirectoryMode=0755
+
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=LC_ALL=C
+Environment=LANG=C
+Environment=TZ=Asia/Shanghai
+Environment=PSM_HOSTAGENT_GROUP=zhaodc
+
+# 说明：本代理必须调用 systemctl / journalctl / ufw，故不做 namespace 级限制；
+# 安全边界由「AF_UNIX 单点 + 共享密钥 + op 白名单 + 参数 schema」共同保证。
+NoNewPrivileges=no
+ProtectHome=no
+ProtectSystem=no
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=psm-hostagent
+
+[Install]
+WantedBy=multi-user.target

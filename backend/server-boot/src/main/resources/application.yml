@@ -104,6 +104,15 @@ serverpanel:
   command:
     timeout-seconds: 30
     max-output-bytes: 2097152
+  # 宿主执行通道：容器内没有 systemctl/journalctl/ufw，系统管理类操作统一经
+  # 宿主机 psm-hostagent 代理执行。代理只监听 AF_UNIX 套接字、不监听任何 TCP 端口；
+  # 密钥文件 0400 只读挂载进容器。详见 documents/api-spec.md 第六节。
+  host-agent:
+    socket-path: ${PSM_HOSTAGENT_SOCKET:/run/psm-hostagent/agent.sock}
+    secret-file: ${PSM_HOSTAGENT_SECRET_FILE:/etc/psm-hostagent/secret}
+    connect-timeout-ms: 3000
+    default-timeout-seconds: 30
+    max-timeout-seconds: 900
   # 面板代管 MySQL 的管理连接
   mysql-admin:
     host: ${PANEL_MYSQL_ADMIN_HOST:localhost}
