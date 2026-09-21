@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import type { Recordable, UserInfo } from '@vben/types';
 
+import type { ProfileUserInfo } from '#/api';
 import type { VbenFormSchema } from '#/adapter/form';
 
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 
 import { ProfileBaseSetting, z } from '@vben/common-ui';
 import { useUserStore } from '@vben/stores';
@@ -87,6 +88,20 @@ function setFormValues(data: Recordable<any>) {
     desc: data.desc,
   });
 }
+
+/**
+ * 顶部紧凑头像会即时落库（不经过本表单的提交按钮）。
+ * 这里监听 userStore 的头像原始值，保证「顶部头像改了 → 表单同步」；
+ * 否则用户随后点「更新基本信息」会拿表单里的旧头像把新头像覆盖掉。
+ */
+watch(
+  () => (userStore.userInfo as null | ProfileUserInfo)?.avatarRaw,
+  (raw) => {
+    profileBaseSettingRef.value?.getFormApi()?.setValues({
+      avatar: raw ?? null,
+    });
+  },
+);
 
 async function handleSubmit(values: Recordable<any>) {
   await updateUserProfileApi({
