@@ -8,6 +8,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -232,7 +233,9 @@ public class MetricsCollector {
         vo.setOs(os.getFamily() + " " + os.getVersionInfo());
         vo.setKernel(System.getProperty("os.version"));
         vo.setCpuModel(processor.getProcessorIdentifier().getName().trim());
-        vo.setCpuPhysicalCores(processor.getPhysicalPackageCount());
+        // getPhysicalPackageCount() 返回的是物理 CPU 插槽数(socket)，单路服务器恒为 1；
+        // 物理核数须用 getPhysicalProcessorCount()（如 16 核 32 线程 -> 16）。
+        vo.setCpuPhysicalCores(processor.getPhysicalProcessorCount());
         vo.setCpuLogicalCores(processor.getLogicalProcessorCount());
 
         // 挂载表（容器部署时读宿主机 <sysroot>/proc/mounts）与块设备拓扑（lsblk --sysroot）
@@ -471,6 +474,12 @@ public class MetricsCollector {
         final Map<String, VgAgg> vgAgg = new LinkedHashMap<>();
         /** dm 设备内核名 → 真实映射名（dm-0 → vg0-root），用于挂载源别名匹配 */
         final Map<String, String> dmAlias = new LinkedHashMap<>();
+        /**
+         * 已登记过的 dm 设备内核名。lsblk 会把同一个 dm 设备列在它的每一个 PV 之下
+         * （LVM 逻辑卷可横跨多个 PV），不去重会使 Device Mapper 与逻辑卷列表出现重复记录，
+         * 并使 VG 的 lvCount / lvSize 被重复累计。
+         */
+        final Set<String> seenDm = new LinkedHashSet<>();
     }
 
     /** VG 聚合统计（由 lsblk LVM 拓扑推导，用于 pvs/vgs/lvs 不可用时的回退） */
@@ -551,8 +560,12 @@ public class MetricsCollector {
      * 确属 LVM 逻辑卷时同时登记 LV 拓扑并累计 VG 容量。
      */
     private void addDmNode(JsonNode node, LsblkData data) {
-        String realName = dmRealName(node); // 容器内 name 可能退化为 dm-N，从 sysfs 解析真名
+        // 跨多个 PV 的逻辑卷会在每个 PV 下各出现一次，按内核设备名去重，避免重复登记
         String kname = node.path("kname").asText(node.path("name").asText(""));
+        if (!kname.isEmpty() && !data.seenDm.add(kname)) {
+            return;
+        }
+        String realName = dmRealName(node); // 容器内 name 可能退化为 dm-N，从 sysfs 解析真名
         if (!kname.isEmpty() && !kname.equals(realName)) {
             data.dmAlias.put(kname, realName);
         }
