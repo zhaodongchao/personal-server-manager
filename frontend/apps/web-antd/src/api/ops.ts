@@ -203,14 +203,32 @@ export namespace OpsApi {
 
   // ==================== 计划任务 ====================
 
+  /** 错过执行策略：skip=不补跑 / run_once=补跑一次 / catch_up=全补（上限 10 次） */
+  export type MisfirePolicy = 'skip' | 'run_once' | 'catch_up';
+
+  /** 并发策略：skip=已在运行则跳过 / queue=等待上一次 / parallel=允许并行 */
+  export type OverlapPolicy = 'skip' | 'queue' | 'parallel';
+
   /** 计划任务 */
   export interface CronJob {
     id?: string;
     name: string;
     cronExpr: string;
+    /** 表达式的人话描述（后端保存时生成） */
+    humanExpr?: string;
     command: string;
     timeoutSec: number;
     status: number;
+    misfirePolicy?: MisfirePolicy;
+    overlapPolicy?: OverlapPolicy;
+    failCount?: number;
+    maxFail?: number;
+    /** 最近一次退出码：0 成功 / -1 异常 / -2 超时 / -3 并发跳过 */
+    lastExitCode?: number;
+    lastDurationMs?: number;
+    running?: number;
+    runningLogId?: string;
+    lockUntil?: string;
     remark?: string;
     lastRunAt?: string;
     nextRunAt?: string;
@@ -224,10 +242,45 @@ export namespace OpsApi {
     jobId: string;
     jobName: string;
     exitCode: number;
+    triggerType?: 'cron' | 'manual' | 'retry';
+    operator?: string;
+    timedOut?: number;
+    truncated?: number;
     output: string;
     startedAt: string;
     finishedAt?: string;
     durationMs: number;
+  }
+
+  /** 计划任务总览统计 */
+  export interface CronSummary {
+    total: number;
+    enabled: number;
+    disabled: number;
+    running: number;
+    failed24h: number;
+    success24h: number;
+    lastRunAt?: string;
+    lastResult?: string;
+    nextRunAt?: string;
+  }
+
+  /** cron 表达式预览（校验 + 人话 + 未来 N 次执行时间） */
+  export interface CronPreview {
+    valid: boolean;
+    cronExpr: string;
+    humanExpr?: string;
+    nextTimes: string[];
+    message?: string;
+  }
+
+  /** 可执行命令白名单（含宿主机可用性） */
+  export interface CronWhitelist {
+    allowed: string[];
+    available: string[];
+    missing: string[];
+    hostAvailable: boolean;
+    hostMessage?: string;
   }
 
   // ==================== 防火墙 ====================
@@ -379,8 +432,30 @@ export async function getCronJobPageApi(params: {
   pageNum?: number;
   pageSize?: number;
   keyword?: string;
+  status?: number;
+  lastResult?: string;
 }) {
   return requestClient.get('/ops/cron/page', { params });
+}
+
+/** 总览统计（页面顶部统计卡） */
+export async function getCronSummaryApi() {
+  return requestClient.get<OpsApi.CronSummary>('/ops/cron/summary');
+}
+
+/**
+ * cron 表达式校验 + 预览。
+ * valid=false 时 message 为具体原因，表单据此在保存前拦截。
+ */
+export async function previewCronExprApi(body: {
+  cronExpr: string;
+  count?: number;
+}) {
+  return requestClient.post<OpsApi.CronPreview>('/ops/cron/preview', body);
+}
+
+export async function getCronWhitelistApi() {
+  return requestClient.get<OpsApi.CronWhitelist>('/ops/cron/commands/whitelist');
 }
 
 export async function createCronJobApi(body: OpsApi.CronJob) {
@@ -395,6 +470,24 @@ export async function deleteCronJobApi(id: string) {
   return requestClient.delete(`/ops/cron/${id}`);
 }
 
+/** 批量删除 */
+export async function batchDeleteCronJobApi(ids: string[]) {
+  return requestClient.delete('/ops/cron/batch', { data: ids });
+}
+
+/**
+ * 列表内快速启停（启用时后端会立即重算下次执行时间）。
+ *
+ * 走通用 request 而非 patch 方法：`@vben/request` 的 RequestClient 只暴露
+ * get/post/put/delete/request，没有 patch，故显式传 method。
+ */
+export async function setCronJobStatusApi(id: string, status: number) {
+  return requestClient.request(`/ops/cron/${id}/status`, {
+    method: 'PATCH',
+    data: { status },
+  });
+}
+
 export async function runCronJobApi(id: string) {
   return requestClient.post<number>(`/ops/cron/${id}/run`);
 }
@@ -404,9 +497,25 @@ export async function getCronLogPageApi(
   params: {
     pageNum?: number;
     pageSize?: number;
+    result?: string;
   },
 ) {
   return requestClient.get(`/ops/cron/${id}/logs`, { params });
+}
+
+/** 单条执行日志详情（轮询直到 finishedAt 非空 = 执行结束） */
+export async function getCronLogDetailApi(id: string, logId: string) {
+  return requestClient.get<OpsApi.CronLog>(`/ops/cron/${id}/logs/${logId}`);
+}
+
+/** 下载单次执行的完整输出 */
+export function cronLogDownloadUrl(id: string, logId: string) {
+  return `/ops/cron/${id}/logs/${logId}/download`;
+}
+
+/** 清空某任务的执行日志 */
+export async function clearCronLogsApi(id: string) {
+  return requestClient.delete(`/ops/cron/${id}/logs`);
 }
 
 // ==================== 防火墙 ====================
