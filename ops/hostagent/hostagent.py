@@ -324,7 +324,12 @@ def op_host_ping(args):
 @op('host.probe')
 def op_host_probe(args):
     tools, missing = {}, []
-    for name in TOOL_CANDIDATES:
+    # 除固定的运维命令外，还要探测 host.exec 白名单里的程序：
+    # 「命令白名单」接口要靠这份结果告诉前端哪些命令在宿主机上真实存在。
+    # 若只探测 TOOL_CANDIDATES，df / ps / lsblk 之类会被误报成「宿主机缺失」——
+    # 把「没探测」当成了「不存在」。（tool() 对未登记的名字会回落 shutil.which）
+    for name in list(TOOL_CANDIDATES) + [
+            n for n in sorted(EXEC_WHITELIST) if n not in TOOL_CANDIDATES]:
         path = tool(name)
         if path:
             tools[name] = path
