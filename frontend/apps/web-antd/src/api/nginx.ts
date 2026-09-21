@@ -29,7 +29,7 @@ export namespace NginxApi {
     /** auto（探测生成）/ manual（手工指定） */
     detectMode?: 'auto' | 'manual';
     /** nginx 可执行路径 */
-    binary?: string;
+    binaryPath?: string;
     /** --prefix */
     prefix?: string;
     /** 主配置 nginx.conf 绝对路径 */
@@ -57,7 +57,7 @@ export namespace NginxApi {
     id?: string;
     name: string;
     detectMode?: string;
-    binary?: string;
+    binaryPath?: string;
     prefix?: string;
     confPath?: string;
     managedDir?: string;

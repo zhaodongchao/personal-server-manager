@@ -56,7 +56,7 @@ function blank(): NginxApi.NginxInstanceBody {
   return {
     name: '',
     detectMode: 'auto',
-    binary: '',
+    binaryPath: '',
     prefix: '',
     confPath: '',
     managedDir: '',
@@ -105,7 +105,7 @@ function select(inst: NginxApi.NginxInstance) {
     id: inst.id,
     name: inst.name,
     detectMode: inst.detectMode ?? 'manual',
-    binary: inst.binary,
+    binaryPath: inst.binaryPath,
     prefix: inst.prefix,
     confPath: inst.confPath,
     managedDir: inst.managedDir,
@@ -255,7 +255,7 @@ async function setDefault(inst: NginxApi.NginxInstance) {
 
             <div class="flex items-start gap-2">
               <Form.Item class="flex-1" label="nginx 可执行路径">
-                <Input v-model:value="form.binary" placeholder="/usr/bin/nginx" />
+                <Input v-model:value="form.binaryPath" placeholder="/usr/bin/nginx" />
               </Form.Item>
               <Form.Item class="flex-1" label="--prefix">
                 <Input v-model:value="form.prefix" placeholder="/www/server/nginx" />

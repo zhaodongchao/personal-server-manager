@@ -157,7 +157,7 @@ public class NginxService {
         vo.setInstanceExists(true);
         vo.setInstanceId(inst.getId());
         vo.setInstanceName(inst.getName());
-        vo.setNginxBinary(inst.getBinary());
+        vo.setNginxBinary(inst.getBinaryPath());
         vo.setConfPath(inst.getConfPath());
         try {
             HostResult r = hostChannel.call("nginx.detect", Map.of(), "探测 Nginx", 30);

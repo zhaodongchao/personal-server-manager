@@ -20,7 +20,7 @@ public class NginxInstanceBody {
     /** auto / manual */
     private String detectMode;
 
-    private String binary;
+    private String binaryPath;
 
     private String prefix;
 

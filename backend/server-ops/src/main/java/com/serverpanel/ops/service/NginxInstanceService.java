@@ -69,7 +69,7 @@ public class NginxInstanceService {
         OpsNginxInstance inst = new OpsNginxInstance();
         inst.setName("主机默认 nginx");
         inst.setDetectMode("auto");
-        inst.setBinary(body.getBinary());
+        inst.setBinaryPath(body.getBinaryPath());
         inst.setPrefix(body.getPrefix());
         inst.setConfPath(body.getConfPath());
         inst.setManagedDir(body.getManagedDir());
@@ -98,7 +98,7 @@ public class NginxInstanceService {
             inst.setName(body.getName().trim());
         }
         inst.setDetectMode(body.getDetectMode() == null ? "manual" : body.getDetectMode());
-        inst.setBinary(body.getBinary());
+        inst.setBinaryPath(body.getBinaryPath());
         inst.setPrefix(body.getPrefix());
         inst.setConfPath(body.getConfPath());
         inst.setManagedDir(body.getManagedDir());
@@ -147,7 +147,7 @@ public class NginxInstanceService {
         String managedDir = prefix == null ? null : prefix + "/conf/serverpanel.d";
         NginxInstanceBody body = new NginxInstanceBody();
         body.setDetectMode("auto");
-        body.setBinary(r.dataString("binary"));
+        body.setBinaryPath(r.dataString("binary"));
         body.setPrefix(prefix);
         body.setConfPath(r.dataString("confPath"));
         body.setManagedDir(managedDir);
