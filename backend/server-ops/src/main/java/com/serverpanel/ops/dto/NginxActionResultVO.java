@@ -25,4 +25,10 @@ public class NginxActionResultVO {
 
     /** 提示信息 */
     private String message;
+
+    /** DNS-01 两步流：需要用户在 DNS 添加的 TXT 记录名（如 _acme-challenge.example.com） */
+    private String dnsTxtName;
+
+    /** DNS-01 两步流：需要用户在 DNS 添加的 TXT 记录值 */
+    private String dnsTxtValue;
 }

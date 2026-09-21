@@ -7,11 +7,19 @@ ${locationsBlock}    location / {
         try_files $uri $uri/ =404;
     }
 </#macro>
+<#macro acmeLoc>
+    # ACME HTTP-01 质询目录（certbot webroot 写入此处，供证书签发/续期使用）
+    location ^~ /.well-known/acme-challenge/ {
+        root ${acmeWebroot};
+        default_type "text/plain";
+    }
+</#macro>
 <#if sslEnabled>
 server {
     listen 80;
     listen [::]:80;
     server_name ${serverNames};
+<@acmeLoc/>
 <#if httpRedirect>
     return 301 https://${primaryDomain}$request_uri;
 <#else>
@@ -43,7 +51,7 @@ server {
     listen 80;
     listen [::]:80;
     server_name ${serverNames};
-
+<@acmeLoc/>
     access_log ${logDir}/${name}.access.log;
     error_log  ${logDir}/${name}.error.log;
 

@@ -21,6 +21,7 @@ import com.serverpanel.ops.entity.OpsNginxStream;
 import com.serverpanel.ops.entity.OpsNginxUpstream;
 import com.serverpanel.ops.mapper.OpsNginxCertMapper;
 import com.serverpanel.ops.mapper.OpsNginxChangeMapper;
+import com.serverpanel.ops.mapper.OpsNginxInstanceMapper;
 import com.serverpanel.ops.mapper.OpsNginxSiteMapper;
 import com.serverpanel.ops.mapper.OpsNginxStreamMapper;
 import com.serverpanel.ops.mapper.OpsNginxUpstreamMapper;
@@ -104,6 +105,7 @@ public class NginxService {
     private final OpsNginxStreamMapper streamMapper;
     private final OpsNginxCertMapper certMapper;
     private final OpsNginxChangeMapper changeMapper;
+    private final OpsNginxInstanceMapper instanceMapper;
     private final NginxInstanceService instanceService;
     private final HostChannelService hostChannel;
     private final ObjectMapper objectMapper;
@@ -692,14 +694,19 @@ public class NginxService {
             throw new ServiceException(ErrorCode.BAD_REQUEST, "域名非法");
         }
         String mode = body.getMode() == null ? "http01" : body.getMode();
+        if ("dns01".equals(mode)) {
+            return issueCertDns01(inst, body, domain);
+        }
         if (!"http01".equals(mode)) {
             throw new ServiceException(ErrorCode.BAD_REQUEST,
-                    "当前仅支持 http01（HTTP-01 webroot）申请；DNS-01 通配符申请将在后续版本开放");
+                    "不支持的 ACME 模式：" + mode + "（仅 http01 / dns01）");
         }
         String webroot = inst.getAcmeWebroot() == null ? "/www/wwwroot/psm-acme" : inst.getAcmeWebroot();
         String certDir = inst.getCertDir() == null ? defaultCertDir(inst) : inst.getCertDir();
         ensureDir(webroot);
         ensureDir(certDir);
+        // HTTP-01 质询需要 nginx 在 :80 上为该域名提供 /.well-known/acme-challenge/
+        ensureAcmeFallback(inst, domain);
 
         Map<String, Object> args = new LinkedHashMap<>();
         args.put("domain", domain);
@@ -730,6 +737,134 @@ public class NginxService {
         Long changeId = recordChange(inst.getId(), "ISSUE_CERT", "cert", cert.getId(),
                 cert.getCertPath(), "", cert.getCertPath(), "");
         return result("证书「" + domain + "」申请成功", changeId);
+    }
+
+    /** DNS-01 通配符证书：两步流（首步返回 TXT 记录 → 用户添加 → 二步确认签发） */
+    private NginxActionResultVO issueCertDns01(OpsNginxInstance inst, NginxCertBody body, String domain) {
+        if (!domain.startsWith("*.")) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST, "DNS-01 仅用于通配符证书（如 *.example.com）");
+        }
+        String certDir = inst.getCertDir() == null ? defaultCertDir(inst) : inst.getCertDir();
+        ensureDir(certDir);
+        Map<String, Object> args = new LinkedHashMap<>();
+        args.put("domain", domain);
+        args.put("email", body.getEmail() == null ? "" : body.getEmail().trim());
+        args.put("configDir", certDir);
+        HostResult r = hostChannel.call("nginx.acmeDns01Issue", args, "申请通配符证书(DNS-01)·首步", 90);
+        if (!r.isSuccess() || !r.dataBool("found")) {
+            throw new ServiceException(ErrorCode.ERROR.getCode(), "DNS-01 启动失败：" + r.errorText());
+        }
+        OpsNginxCert cert = new OpsNginxCert();
+        cert.setInstanceId(inst.getId());
+        cert.setDomain(domain);
+        cert.setType("letsencrypt");
+        cert.setCertPath("");
+        cert.setKeyPath("");
+        cert.setIssuer("Let's Encrypt");
+        cert.setAutoRenew(body.getAutoRenew() != null && body.getAutoRenew() == 1 ? 1 : 0);
+        cert.setStatus("pending");
+        cert.setCreatedAt(LocalDateTime.now());
+        certMapper.insert(cert);
+        NginxActionResultVO vo = result("请添加以下 TXT 记录后点击「验证并签发」", cert.getId());
+        vo.setDnsTxtName(r.dataString("txtName"));
+        vo.setDnsTxtValue(r.dataString("txtValue"));
+        return vo;
+    }
+
+    /** DNS-01 二步：唤醒阻塞中的 certbot 完成签发并回写证书 */
+    public NginxActionResultVO dnsVerifyCert(Long id) {
+        OpsNginxCert cert = certMapper.selectById(id);
+        if (cert == null) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST, "证书不存在");
+        }
+        if (!"pending".equals(cert.getStatus())) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST, "该证书不在 pending 状态，无需验证");
+        }
+        OpsNginxInstance inst = resolveInstance(cert.getInstanceId());
+        String certDir = inst.getCertDir() == null ? defaultCertDir(inst) : inst.getCertDir();
+        HostResult v = hostChannel.call("nginx.acmeDns01Verify",
+                Map.of("domain", cert.getDomain(), "configDir", certDir),
+                "确认 DNS-01 并完成签发", 600);
+        if (!v.isSuccess() || !v.dataBool("found")) {
+            throw new ServiceException(ErrorCode.ERROR.getCode(), "签发未完成，请确认 TXT 已生效且已等待传播：" + v.errorText());
+        }
+        HostResult st = hostChannel.call("nginx.acmeStatus",
+                Map.of("domain", cert.getDomain(), "configDir", certDir), "读取证书状态", 30);
+        if (!st.isSuccess() || !st.dataBool("found")) {
+            throw new ServiceException(ErrorCode.ERROR.getCode(), "签发成功但读取证书路径失败");
+        }
+        cert.setCertPath(st.dataString("certPath"));
+        cert.setKeyPath(st.dataString("keyPath"));
+        cert.setIssuer("Let's Encrypt");
+        cert.setNotAfter(parseNotAfter(st.dataString("notAfter")));
+        cert.setLastRenewAt(LocalDateTime.now());
+        cert.setStatus("valid");
+        certMapper.updateById(cert);
+        Long changeId = recordChange(inst.getId(), "ISSUE_CERT", "cert", cert.getId(),
+                cert.getCertPath(), "", cert.getCertPath(), "");
+        return result("通配符证书「" + cert.getDomain() + "」签发成功", changeId);
+    }
+
+    /** 为指定域名注入 HTTP-01 质询托管块（按域名匹配，避免与现有 default_server 冲突） */
+    private void ensureAcmeFallback(OpsNginxInstance inst, String domain) {
+        if (inst.getManagedDir() == null) {
+            return;
+        }
+        String safe = domain.replaceAll("[^a-zA-Z0-9._-]", "_");
+        String confPath = inst.getManagedDir() + "/acme-" + safe + ".conf";
+        if (Files.exists(Path.of(confPath))) {
+            return;
+        }
+        String webroot = inst.getAcmeWebroot() == null ? "/www/wwwroot/psm-acme" : inst.getAcmeWebroot();
+        String content = "# Generated by ServerPanel - ACME HTTP-01 challenge fallback (managed)\n"
+                + "server {\n"
+                + "    listen 80;\n    listen [::]:80;\n"
+                + "    server_name " + domain + ";\n"
+                + "    location ^~ /.well-known/acme-challenge/ {\n"
+                + "        root " + webroot + ";\n        default_type \"text/plain\";\n    }\n"
+                + "    location / { return 444; }\n}\n";
+        applyConfig(inst, confPath, content, null);
+    }
+
+    /** 每日证书维护：续期临期证书 + 刷新到期状态 + 临期/过期告警（供 @Scheduled 调用） */
+    public void dailyCertMaintenance() {
+        List<OpsNginxInstance> insts = instanceMapper.selectList(new LambdaQueryWrapper<OpsNginxInstance>());
+        LocalDateTime now = LocalDateTime.now();
+        for (OpsNginxInstance inst : insts) {
+            try {
+                List<OpsNginxCert> certs = certMapper.selectList(new LambdaQueryWrapper<OpsNginxCert>()
+                        .eq(OpsNginxCert::getInstanceId, inst.getId()));
+                for (OpsNginxCert cert : certs) {
+                    boolean renewed = false;
+                    if ("letsencrypt".equals(cert.getType()) && cert.getAutoRenew() != null
+                            && cert.getAutoRenew() == 1 && cert.getNotAfter() != null
+                            && cert.getNotAfter().isAfter(now)
+                            && cert.getNotAfter().isBefore(now.plusDays(30))) {
+                        try {
+                            renewCert(cert.getId());
+                            renewed = true;
+                            log.info("证书自动续期：{}", cert.getDomain());
+                        } catch (RuntimeException e) {
+                            log.warn("证书自动续期失败：{} - {}", cert.getDomain(), e.getMessage());
+                        }
+                    }
+                    OpsNginxCert fresh = certMapper.selectById(cert.getId());
+                    if ("letsencrypt".equals(fresh.getType())) {
+                        refreshCertStatus(inst, fresh);
+                    } else {
+                        fresh.setStatus(certStatusOf(fresh.getNotAfter()));
+                    }
+                    if (fresh.getNotAfter() != null && fresh.getNotAfter().isBefore(now.plusDays(7))) {
+                        recordChange(inst.getId(), "ALERT_EXPIRING", "cert", fresh.getId(),
+                                fresh.getCertPath(), "", "", "");
+                        log.warn("证书临期/过期需关注：{} (notAfter={})", fresh.getDomain(), fresh.getNotAfter());
+                    }
+                    certMapper.updateById(fresh);
+                }
+            } catch (RuntimeException e) {
+                log.warn("实例 {} 证书维护失败: {}", inst.getId(), e.getMessage());
+            }
+        }
     }
 
     public NginxActionResultVO renewCert(Long id) {
@@ -1234,6 +1369,7 @@ public class NginxService {
         model.put("staticRoot", site.getStaticRoot() == null ? "" : site.getStaticRoot());
         model.put("locationsBlock", renderLocations(parseLocations(site.getLocationsJson())));
         model.put("logDir", inst.getLogDir() == null ? "/www/wwwlogs" : inst.getLogDir());
+        model.put("acmeWebroot", inst.getAcmeWebroot() == null ? "/www/wwwroot/psm-acme" : inst.getAcmeWebroot());
         model.put("name", site.getName());
         String template = "proxy".equals(site.getSiteType())
                 ? "nginx-site-proxy.ftl" : "nginx-site-static.ftl";

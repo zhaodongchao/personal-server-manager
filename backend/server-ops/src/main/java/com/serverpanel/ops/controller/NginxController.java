@@ -264,6 +264,13 @@ public class NginxController {
         return R.ok(nginxService.renewCert(id));
     }
 
+    @Audit(module = "ops", action = "nginx:cert:dns-verify", risky = true)
+    @SaCheckPermission("ops:nginx:cert")
+    @PostMapping("/cert/{id}/dns-verify")
+    public R<NginxActionResultVO> dnsVerifyCert(@PathVariable Long id) {
+        return R.ok(nginxService.dnsVerifyCert(id));
+    }
+
     @SaCheckPermission("ops:nginx:list")
     @GetMapping("/cert/{id}/status")
     public R<OpsNginxCert> certStatus(@PathVariable Long id) {
