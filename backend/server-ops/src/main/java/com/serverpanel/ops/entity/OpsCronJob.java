@@ -1,5 +1,8 @@
 package com.serverpanel.ops.entity;
 
+import tools.jackson.databind.annotation.JsonSerialize;
+import tools.jackson.databind.ser.std.ToStringSerializer;
+
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.serverpanel.common.mybatis.BaseEntity;
 import lombok.Data;
@@ -17,6 +20,18 @@ import java.time.LocalDateTime;
 @EqualsAndHashCode(callSuper = true)
 @TableName("ops_cron_job")
 public class OpsCronJob extends BaseEntity {
+
+    
+    /**
+     * id 覆写：雪花 ID（19 位）超过 JS Number.MAX_SAFE_INTEGER，
+     * 直接序列化为数字会让前端 JSON.parse 后精度丢失（末尾变 0），
+     * 故对外统一序列化为字符串。
+     */
+    @Override
+    @JsonSerialize(using = ToStringSerializer.class)
+    public Long getId() {
+        return super.getId();
+    }
 
     private String name;
 

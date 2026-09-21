@@ -1,5 +1,8 @@
 package com.serverpanel.ops.dto;
 
+import tools.jackson.databind.annotation.JsonSerialize;
+import tools.jackson.databind.ser.std.ToStringSerializer;
+
 import lombok.Data;
 
 import java.util.List;
@@ -20,6 +23,8 @@ public class NginxStatusVO {
 
     /** 实例是否存在 */
     private boolean instanceExists;
+
+    @JsonSerialize(using = ToStringSerializer.class)
 
     private Long instanceId;
 

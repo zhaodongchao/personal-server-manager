@@ -1,5 +1,8 @@
 package com.serverpanel.ops.dto;
 
+import tools.jackson.databind.annotation.JsonSerialize;
+import tools.jackson.databind.ser.std.ToStringSerializer;
+
 import lombok.Data;
 
 /**
@@ -21,6 +24,7 @@ public class NginxActionResultVO {
     private boolean rollbackable;
 
     /** 变更记录 ID */
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long changeId;
 
     /** 提示信息 */

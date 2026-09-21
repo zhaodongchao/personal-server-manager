@@ -1,5 +1,8 @@
 package com.serverpanel.ops.dto;
 
+import tools.jackson.databind.annotation.JsonSerialize;
+import tools.jackson.databind.ser.std.ToStringSerializer;
+
 import lombok.Data;
 
 /**
@@ -22,6 +25,7 @@ public class FirewallActionResultVO {
     private String command;
 
     /** 本次变更记录 ID（可用于查看 diff / 回滚） */
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long changeId;
 
     /** 新增/删除的规则描述 */
