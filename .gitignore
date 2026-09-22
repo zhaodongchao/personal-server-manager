@@ -49,3 +49,6 @@ Thumbs.db
 # ===== 环境敏感文件 =====
 **/.env.local
 **/.env.*.local
+
+# Python 字节码缓存（宿主代理脚本运行产生）
+__pycache__/
