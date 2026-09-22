@@ -208,7 +208,7 @@ ServerPanel 跑在容器里，但「服务管理 / 计划管理 / 防火墙管�
 
 - **宿主侧**：`ops/hostagent/hostagent.py`，单文件 Python systemd 服务（`psm-hostagent`），
   监听 AF_UNIX socket `/run/psm-hostagent/agent.sock`（不暴露 TCP），共享密钥认证，
-  28 个操作白名单 + 逐操作参数校验，子进程一律 argv 数组；
+  46 个操作白名单 + 逐操作参数校验，子进程一律 argv 数组；
 - **后端侧**：`server-ops` 的 `HostChannelService`（`hostChannel.call(op, args, label, timeoutSec)`），
   能力快照 `/ops/host/capability`，通道不可用时写接口抛 `5009`、前端整页只读降级；
 - **前端侧**：`views/ops/components/HostChannelBanner.vue` 三页共用，展示通道状态与安装指引；
@@ -232,7 +232,25 @@ Web 录入 → 存库 → FreeMarker 渲染 conf → 写入托管目录 → `ngi
 - **踩坑**：实体字段名会作为 MyBatis-Plus 的 SELECT 别名，`binary` 是 MySQL 保留字，
   字段必须命名为 `binaryPath`（列 `binary_path`）否则 `SELECT ... AS binary` 报语法错（曾导致所有 nginx 列表 500）。
 
-## 8. Agent Team（智能体分工）
+## 8. 服务器配置管理（运维工具 / server-ops）
+
+`ServerConfigController` + `ServerConfigService` 提供「非侵入式」系统配置管理：
+Web 录入 → 存库（MongoDB）→ 渲染 drop-in 片段 → 经宿主通道生效 → 权威校验 + 回读。要点：
+
+- **四类**：`sysctl` / `limits` / `sshd` / `timesync`（provider 自适应 chrony | systemd-timesyncd）。
+- **非侵入**：只写发行版之外的 `99-serverpanel.conf` drop-in，发行版主配置永不修改；
+  **「空值 = 不托管」是核心语义**（不写这一行 = 系统继续用默认值）。
+- **9 道闸门**：前端校验 → 服务端 schema/黑名单 → 宿主 dry-run → 确认 → 备份 → 原子写 →
+  权威校验 → 生效 → 回读，任一步失败自动回滚；`sys.unmanage`（停止托管）同样失败安全
+  （删除前留内容，重新生效失败则写回并再试）。
+- **可追溯可回滚**：每次动作记 `OpsServerConfigChange`（前后全文 + diff + 校验/生效输出 +
+  配置项快照），支持按历史一键恢复与「停止托管」纯净卸载。
+- **可用性判据**：看「主配置是否 Include 该 drop-in 目录」，**不是**看目录是否已存在
+  （`sshd_config.d` / `timesyncd.conf.d` 在不少发行版默认不存在，写入时按需创建）。
+- **踩坑**：所有宿主 op 必须注册在 `hostagent.py` 的 `if __name__ == '__main__'` 守卫**之前**；
+  追加到 `serve()` 之后永不执行（`unknown-op`），而 `grep` 验证会假阳性——必须真实调用验证。
+
+## 9. Agent Team（智能体分工）
 
 项目配置 7 个自定义智能体，覆盖前后端全链路职责：
 

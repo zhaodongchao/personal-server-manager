@@ -47,6 +47,7 @@
 | 5xxx | 运维 | `5001` 命令不在白名单、`5002` 超时、`5003` 进程不存在、`5004` 服务不可管理、`5005` cron 非法、`5006` 任务不存在、`5007` 无可用防火墙、`5008` 规则不存在、`5009` 宿主通道不可用、`5010` 宿主通道版本不匹配（已降级只读）、`5011` 服务操作被保护清单拦截、`5012` 计划任务执行中（并发互斥）、`5013` cron 补跑次数超上限、`5014` 防火墙规则编号已变化、`5015` 该操作会切断 SSH/面板访问（需二次确认）、`5016` 目标规则由外部程序托管（禁止面板删除）、`5017` 防火墙变更不可回滚 |
 | 6xxx | 应用栈 | `6001` Docker 不可用、`6002` 资源不存在、`6003` 域名已存在、`6004` Nginx 不可用、`6005` 配置校验失败、`6006` MySQL 管理连接不可用、`6007` 标识符非法、`6008` 库已存在、`6009` 库不存在 |
 | 6xxx | Nginx 管理 | `6010` 实例不存在、`6011` 危险操作需二次确认（confirm 关键字）、`6012` ACME 模式不支持、`6013` DNS-01 仅支持通配符、`6014` 证书不存在或状态非法、`6015` 配置渲染/校验失败 |
+| 6xxx | 服务器配置 | `6020` 配置类别不存在、`6021` 预演校验未通过、`6022` 生效失败（已自动回滚）、`6023` 备份失败、`6024` 高风险变更需键入关键字（防自锁护栏）、`6025` 配置项取值非法或违反安全规则、`6026` 该类别正在生效中（并发互斥） |
 
 ### 4. 分页结构与参数
 
@@ -666,6 +667,61 @@ DNS-01 通配符两步流——首步 `issue` 返回需添加的 TXT 记录名/�
 临期（≤30 天）证书自动续期并刷新到期状态、临期/过期告警。**危险操作（删站/实例/证书/转发、回滚）
 需 `confirm` 关键字二次确认，错误码 `6011`。**
 
+
+### 7. 服务器配置管理 `ops/config`
+
+> 非侵入式系统配置管理：Web 录入 → 存库（MongoDB）→ 渲染 drop-in 片段 → 经宿主通道生效
+> → 权威校验 + 回读。每次破坏性动作留前后全文与行级 diff，支持按历史一键恢复、
+> 支持「停止托管」纯净卸载。四类：`sysctl` / `limits` / `sshd` / `timesync`
+> （时间同步的 provider 自适应 chrony | systemd-timesyncd）。
+
+**核心语义**：配置项的 `itemValue` 为空 = **不托管该项**（本模块不向系统写这一行），
+因此「清空值 → 一键生效」是合法操作，等价于让该项回到发行版默认值。
+
+**非侵入落点**（发行版主配置永不修改）：
+
+| 类别 | 托管文件（drop-in） | 即时生效动作 |
+| ---- | ---- | ---- |
+| sysctl | `/etc/sysctl.d/99-serverpanel.conf` | `sysctl --system` |
+| limits | `/etc/security/limits.d/99-serverpanel.conf` | 无（仅对新会话/新进程生效） |
+| sshd | `/etc/ssh/sshd_config.d/99-serverpanel.conf` | `systemctl restart sshd` |
+| timesync | `/etc/systemd/timesyncd.conf.d/99-serverpanel.conf` 或 `/etc/chrony/conf.d/99-serverpanel.conf` | 重启 `systemd-timesyncd` / `chrony` |
+
+**「一键生效」9 道闸门**：前端校验 → 服务端 schema/黑名单 → 宿主机 dry-run → 用户确认 →
+备份 → 原子写 → 权威校验 → 生效 → 回读；**任一步失败自动回滚**（含写回备份并重新生效）。
+L3 类别（sshd）额外要求键入后端下发的关键字。
+
+| 方法 | 路径 | 权限 | 说明 |
+| ---- | ---- | ---- | ---- |
+| GET | `/categories` | `ops:config:list` | 类别列表 + 宿主能力（可用性/托管路径/风险级/provider/托管项数） |
+| GET | `/detect` | `ops:config:list` | 主动重探宿主能力（装好宿主代理后无需重启面板） |
+| GET | `/category/{key}/items` | `ops:config:list` | 配置项（托管值 + 当前生效值 + 推荐值） |
+| POST | `/category/{key}/item` | `ops:config:apply` | 新增配置项 |
+| PUT | `/category/{key}/item/{itemKey}` | `ops:config:apply` | 修改配置项（值置空 = 不托管） |
+| DELETE | `/category/{key}/item/{itemKey}` | `ops:config:apply` | 删除配置项（仅删录入，不改系统） |
+| GET | `/category/{key}/preview` | `ops:config:list` | 预演：渲染全文 + diff + 宿主机 dry-run（**不落盘**） |
+| POST | `/category/{key}/apply` | `ops:config:apply` | 一键生效（L3 需 `confirm`） |
+| POST | `/category/{key}/unmanage` | `ops:config:apply` | 停止托管（删片段 + 全部备份并重新生效，L3 需 `confirm`） |
+| GET | `/category/{key}/change/page` | `ops:config:list` | 变更历史分页（`key=all` = 跨类别总览） |
+| GET | `/change/{id}` | `ops:config:list` | 变更详情（前后全文 + diff + 校验/生效输出 + 配置项快照） |
+| POST | `/change/{id}/restore` | `ops:config:rollback` | 按历史恢复（`target=before/after`，L3 需 `confirm`） |
+
+**宿主 op**（`ops/hostagent/hostagent.py`）：`sys.detect` / `sys.readManaged` / `sys.probe` /
+`sys.validate` / `sys.apply` / `sys.rollback` / `sys.unmanage`。
+
+**安全护栏**（服务端 `checkRules` 是唯一事实来源，前端不重复实现规则）：
+sshd 不得同时关闭 `PasswordAuthentication` 与 `PubkeyAuthentication`；
+timesync 至少保留一条 NTP 源；`vm.overcommit_memory ∈ {0,1,2}`；
+`net.ipv4.ip_local_port_range` 需形如 `1024 65535` 且 `0 < 低 < 高 <= 65535`。
+同一类别的生效/恢复/停止托管之间用 `ReentrantLock` 互斥（`6026`）。
+
+**类别可用性判据**：sysctl/limits/sshd 由宿主 `sys.detect` 判定，
+**依据是「主配置是否 Include 该 drop-in 目录」而不是「目录是否已存在」**
+（`sshd_config.d` / `timesyncd.conf.d` 在不少发行版默认不存在，写入时按需创建）；
+缺 `sysctl` / `sshd` 命令或缺少 `systemd-timesyncd`/`chrony` 时该类标为不可用并给出原因。
+
+**存储与菜单**：MongoDB 三集合（配置类别 / 配置项 / 变更历史），Flyway `V9` 只建菜单与权限点
+（菜单 `407`「服务器配置」→ `/ops/server-config`，按钮权限 `ops:config:apply`、`ops:config:rollback`）。
 
 ## 七、应用栈 `/api/v1/appstack`
 

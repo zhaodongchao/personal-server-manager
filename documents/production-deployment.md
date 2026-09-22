@@ -316,7 +316,7 @@ sudo rm -rf /opt/serverpanel            # 按需删除（含数据）
 需要在**宿主机**上执行系统命令。为此在宿主机上安装一个极小的 systemd 服务 `psm-hostagent`：
 
 - 单文件 Python 3.11，监听 **AF_UNIX** socket `/run/psm-hostagent/agent.sock`（0660，不暴露 TCP）；
-- 共享密钥认证（密钥 0400），28 个操作白名单 + 每操作参数校验；
+- 共享密钥认证（密钥 0400），46 个操作白名单 + 每操作参数校验；
 - 子进程一律 argv 数组（不经过 shell），杜绝注入；
 - `RuntimeDirectoryPreserve=yes` 保证重启后 socket inode 稳定。
 
@@ -342,6 +342,33 @@ sudo ss -xlp | grep agent.sock
 - 首次使用建议在「实例」里点「探测」自动识别本机 nginx，或手动填写二进制路径与托管目录；
 - ACME 证书默认申请到宿主机的 certbot 配置目录（容器挂载映射），续期由每日 03:30 调度自动执行；
 - 所有写操作均生成可回滚快照，删站/删证书/回滚需二次确认关键字。
+
+## 十三、服务器配置管理模块（运维工具）
+
+面板「运维工具 → 服务器配置」在线管理四类系统配置（内核参数 / 资源限制 / SSH / 时间同步）。
+**不修改发行版主配置**，只写发行版之外的 drop-in 片段：
+
+| 类别 | 落点 | 生效方式 |
+| ---- | ---- | ---- |
+| 内核参数 | `/etc/sysctl.d/99-serverpanel.conf` | `sysctl --system`（即时并随启动保持） |
+| 资源限制 | `/etc/security/limits.d/99-serverpanel.conf` | 无即时动作，**仅对新会话/新进程生效** |
+| SSH | `/etc/ssh/sshd_config.d/99-serverpanel.conf` | `systemctl restart sshd` |
+| 时间同步 | `/etc/systemd/timesyncd.conf.d/` 或 `/etc/chrony/conf.d/` | 重启对应服务 |
+
+前提条件与注意事项：
+
+- 依赖宿主执行通道（第十一节）——`sys.*` 七个 op 在宿主机以 root 执行（容器内没有
+  `sysctl` / `sshd` / `systemctl`）；
+- **SSH 类别**要求主配置 `/etc/ssh/sshd_config` 含 `Include /etc/ssh/sshd_config.d/*.conf`；
+  该**目录本身可以不存在**，首次生效时按需创建。若主配置缺少这行 Include，面板会把该类别
+  标为「不可用」并给出原因，避免「写了却不生效」；
+- 数据存 **MongoDB**（类别 / 配置项 / 变更历史三集合），Flyway `V9` 只负责菜单与权限点；
+- 每次生效前自动备份托管片段（`.psm.bak.<时间戳>`）；校验或生效失败会**自动回滚**
+  （写回备份并重新生效）；单次生效会记录前后全文、行级 diff、校验/生效输出与配置项快照；
+- 「停止托管」= 删除托管片段与全部备份并重新生效（回到发行版原状），面板里的配置项录入保留；
+  若重新生效失败，会自动写回原托管内容并再次生效，避免留下「片段已删 + 服务未重载」的半残状态；
+- L3 类别（SSH）的生效 / 停止托管 / 按历史恢复都要求键入关键字 `APPLY sshd`，
+  防止改错 SSH 参数把自己锁在门外。
 
 ## 十、上线前安全检查清单
 
