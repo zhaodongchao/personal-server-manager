@@ -125,7 +125,8 @@ public class AuditAspect {
             }
             safeArgs.add(arg);
         }
-        entry.setParams(jsonSnippet(safeArgs));
+        // 入参落库开关：false 时只留痕「用了哪个能力」，不复制明文
+        entry.setParams(audit.recordParams() ? jsonSnippet(safeArgs) : PARAMS_REDACTED);
 
         entry.setRisky(audit.risky() || audit.safe() ? 1 : 0);
 
