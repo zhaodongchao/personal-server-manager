@@ -6,6 +6,11 @@
  * （SHELL 的选择项还会按宿主侧是否真的装了该命令做禁用），这样以后新增一类处理器
  * 不需要动前端一行代码。
  *
+ * <p>参数区是<b>两层动态</b>的：选 INTERNAL 处理器后，具体内置任务的专用字段
+ * （如 DB_BACKUP 的 databaseId）来自 /job/options 的 internalTasks[].fields。
+ * 任务声明了专用字段时，自由 JSON 文本域会收起 —— 两者并存会让同名字段出现两个入口，
+ * 保存时无法判断该信谁。字段值统一存在同一个扁平 params 对象里，提交时收进 params 子对象。
+ *
  * <p>两处刻意的交互设计：
  * <ul>
  *   <li><b>cron 校验前置</b> —— 保存前就把「表达式是否合法 + 相邻间隔是否过短 + 未来
@@ -93,6 +98,33 @@ const currentSchema = computed(() =>
 
 const currentFields = computed(() => currentSchema.value?.fields ?? []);
 
+/** 与处理器固有字段同名的内置任务字段（保留名），不参与渲染与提交 */
+const RESERVED_FIELD_NAMES = new Set(['params', 'task']);
+
+/** 当前选中的内置任务（仅 INTERNAL 处理器有意义） */
+const activeTask = computed(() =>
+  form.handler === 'INTERNAL'
+    ? props.options?.internalTasks?.find((item) => item.code === params.task)
+    : undefined,
+);
+
+/** 当前内置任务声明的专用字段 */
+const taskFields = computed(() =>
+  (activeTask.value?.fields ?? []).filter(
+    (field) => !RESERVED_FIELD_NAMES.has(field.name),
+  ),
+);
+
+/** 实际渲染的参数字段：任务声明了专用字段时用它替换掉 JSON 文本域 */
+const renderFields = computed(() =>
+  taskFields.value.length > 0
+    ? [
+        ...currentFields.value.filter((field) => field.name !== 'params'),
+        ...taskFields.value,
+      ]
+    : currentFields.value,
+);
+
 const handlerOptions = computed(() =>
   props.handlers.map((item) => ({
     label: `${item.label}（${item.type}）`,
@@ -175,9 +207,39 @@ function resetParams() {
   }
 }
 
+/**
+ * 把 handlerParam.params 里的嵌套对象摊平到表单上。
+ *
+ * <p>内置任务的两层结构是 { task, params: {...} }，而表单是扁平的，所以回显时要把
+ * params 的键摊开；同时把文本域恢复成 JSON 字符串 —— 服务端回传的是对象，
+ * 直接绑给 Input.TextArea 会显示成 [object Object]。
+ */
+function unfoldNestedParams() {
+  const nested = params.params;
+  if (!nested || typeof nested !== 'object') return;
+  Object.assign(params, nested);
+  params.params = JSON.stringify(nested);
+}
+
+/** 切换内置任务时清掉上一个任务的字段值，避免脏值被带进新任务 */
+watch(
+  () => params.task,
+  (now, before) => {
+    if (now === before) return;
+    for (const item of props.options?.internalTasks ?? []) {
+      for (const field of item.fields ?? []) {
+        if (!RESERVED_FIELD_NAMES.has(field.name)) {
+          delete params[field.name];
+        }
+      }
+    }
+    fillDefaults();
+  },
+);
+
 /** 必填的枚举字段给个默认值，省掉「保存时才被告知没选」 */
 function fillDefaults() {
-  for (const field of currentFields.value) {
+  for (const field of renderFields.value) {
     if (!field.required || !isBlank(params[field.name])) continue;
     if (form.handler === 'INTERNAL' && field.name === 'task') {
       const first = props.options?.internalTasks?.[0]?.code;
@@ -207,6 +269,7 @@ async function init() {
       timeoutSec: job.timeoutSec ?? 300,
     });
     Object.assign(params, parseParam(job.handlerParam));
+    unfoldNestedParams();
     fillDefaults();
     void checkCron();
   } else {
@@ -295,7 +358,10 @@ const JSON_FIELDS = new Set(['headers', 'params']);
 
 function buildPayload(): Record<string, any> {
   const payload: Record<string, any> = {};
+  const structured = taskFields.value.length > 0;
   for (const field of currentFields.value) {
+    // 内置任务已声明专用字段时，params 文本域已被结构化字段接管，跳过
+    if (field.name === 'params' && structured) continue;
     const raw = params[field.name];
     if (isBlank(raw)) continue;
     if (JSON_FIELDS.has(field.name)) {
@@ -318,6 +384,16 @@ function buildPayload(): Record<string, any> {
       payload[field.name] = raw;
     }
   }
+  if (structured) {
+    const nested: Record<string, any> = {};
+    for (const field of taskFields.value) {
+      const raw = params[field.name];
+      if (isBlank(raw)) continue;
+      // InternalTask.execute 的入参是 Map<String, String>，统一字符串化
+      nested[field.name] = String(raw);
+    }
+    payload.params = nested;
+  }
   return payload;
 }
 
@@ -338,7 +414,7 @@ async function submit() {
     message.warning('请选择执行器');
     return;
   }
-  const missing = currentFields.value.filter(
+  const missing = [...currentFields.value, ...taskFields.value].filter(
     (field) => field.required && isBlank(params[field.name]),
   );
   if (missing.length > 0) {
@@ -480,7 +556,7 @@ async function submit() {
       />
 
       <Form.Item
-        v-for="field in currentFields"
+        v-for="field in renderFields"
         :key="field.name"
         :label="field.label"
         :required="field.required"

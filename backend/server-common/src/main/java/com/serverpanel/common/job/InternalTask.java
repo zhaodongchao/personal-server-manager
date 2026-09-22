@@ -1,5 +1,6 @@
 package com.serverpanel.common.job;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -30,6 +31,26 @@ public interface InternalTask {
 
     /** 用途说明（前端展示） */
     String description();
+
+    /**
+     * 界面表单字段（可选，默认空）。
+     *
+     * <p>默认返回空列表 —— 此时界面只给一个「参数（JSON 对象）」文本域，用户按
+     * {@link #description()} 的说明手写 JSON。返回非空则界面按这些字段渲染结构化表单，
+     * 填写结果作为 {@code params} 下发给 {@link #execute(Map)}。
+     *
+     * <p><b>声明了字段的任务，界面会收起自由 JSON 文本域</b>（两者并存会让同名字段出现
+     * 两个入口，保存时无法判断该信谁）—— 所以需要接收什么参数就在这里声明全。
+     * 字段名不能是 {@code task} 或 {@code params}（与处理器固有字段冲突，前端会忽略）。
+     *
+     * @return 字段定义；默认空
+     *
+     * @author zhaodc
+     * @since 2026-09-23 UTC+8
+     */
+    default List<JobField> fields() {
+        return List.of();
+    }
 
     /**
      * 执行。

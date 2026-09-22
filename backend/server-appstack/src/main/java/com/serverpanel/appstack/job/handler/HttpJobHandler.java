@@ -16,6 +16,7 @@ import com.serverpanel.appstack.job.JobHttpClient;
 import com.serverpanel.appstack.job.JobSupport;
 import com.serverpanel.common.exception.ErrorCode;
 import com.serverpanel.common.exception.ServiceException;
+import com.serverpanel.common.job.JobField;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -51,16 +52,16 @@ public class HttpJobHandler implements JobHandler {
         return new HandlerSchema(type(), "HTTP 接口调用",
                 "定时调用 HTTP 接口，按期望状态码判定成败",
                 List.of(
-                        HandlerField.select("method", "方法", true,
+                        JobField.select("method", "方法", true,
                                 List.of("GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"), null),
-                        HandlerField.text("url", "URL", true,
+                        JobField.text("url", "URL", true,
                                 "仅 http/https；云元数据地址会被拒绝；允许本机与内网地址"),
-                        HandlerField.area("headers", "请求头（JSON 对象）", false,
+                        JobField.area("headers", "请求头（JSON 对象）", false,
                                 "如 {\"X-Token\":\"abc\"}"),
-                        HandlerField.text("contentType", "Content-Type", false,
+                        JobField.text("contentType", "Content-Type", false,
                                 "默认 application/json"),
-                        HandlerField.area("body", "请求体", false, null),
-                        HandlerField.number("expectStatus", "期望状态码", false,
+                        JobField.area("body", "请求体", false, null),
+                        JobField.number("expectStatus", "期望状态码", false,
                                 "默认 200；与实际不符即判失败")));
     }
 

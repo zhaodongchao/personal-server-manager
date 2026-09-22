@@ -1,6 +1,7 @@
 package com.serverpanel.appstack.job.internal;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 
 import org.springframework.stereotype.Component;
@@ -8,6 +9,7 @@ import org.springframework.stereotype.Component;
 import com.serverpanel.appstack.config.JobProperties;
 import com.serverpanel.appstack.job.JobLogRecorder;
 import com.serverpanel.common.job.InternalTask;
+import com.serverpanel.common.job.JobField;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -45,6 +47,20 @@ public class JobLogPurgeTask implements InternalTask {
     public String description() {
         return "按保留天数清理历史调度日志（默认 "
                 + "30 天，可用参数 days 覆盖）";
+    }
+
+    /**
+     * 界面字段：保留天数。
+     *
+     * <p>help 里带上当前生效的配置值 —— 用户不填时到底按多少天清理，保存前就能看见。
+     *
+     * @author zhaodc
+     * @since 2026-09-23 UTC+8
+     */
+    @Override
+    public List<JobField> fields() {
+        return List.of(JobField.number("days", "保留天数", false,
+                "留空则使用系统配置（当前 " + properties.getLog().getRetentionDays() + " 天）"));
     }
 
     @Override

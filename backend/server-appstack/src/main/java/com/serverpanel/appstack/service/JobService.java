@@ -297,6 +297,7 @@ public class JobService {
             item.put("code", task.code());
             item.put("label", task.label());
             item.put("description", task.description());
+            item.put("fields", task.fields());
             return item;
         }).toList());
         options.put("minIntervalSeconds", properties.getLimits().getMinIntervalSeconds());

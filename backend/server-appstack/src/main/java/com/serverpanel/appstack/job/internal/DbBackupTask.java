@@ -9,6 +9,7 @@ import com.serverpanel.appstack.entity.AppDatabase;
 import com.serverpanel.appstack.service.DatabaseService;
 import com.serverpanel.common.core.PageQuery;
 import com.serverpanel.common.job.InternalTask;
+import com.serverpanel.common.job.JobField;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -51,6 +52,21 @@ public class DbBackupTask implements InternalTask {
     @Override
     public String description() {
         return "备份指定库（databaseId）或全部受管库；留空参数即备份全部";
+    }
+
+    /**
+     * 界面字段：数据库 ID。
+     *
+     * <p>ID 是雪花号，前端按字符串处理（数字输入框会丢精度），故这里用 {@code text}
+     * 而不是 {@code number}。
+     *
+     * @author zhaodc
+     * @since 2026-09-23 UTC+8
+     */
+    @Override
+    public List<JobField> fields() {
+        return List.of(JobField.text("databaseId", "数据库 ID", false,
+                "app_database.id；留空即备份全部受管库。雪花号请直接粘贴，勿手输"));
     }
 
     @Override

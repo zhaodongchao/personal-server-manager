@@ -120,6 +120,12 @@ export namespace JobApi {
     code: string;
     label: string;
     description: string;
+    /**
+     * 任务自己声明的专用字段（服务端下发）。
+     *
+     * <p>为空时界面回落到「参数（JSON 对象）」文本域；非空则按字段渲染结构化表单。
+     */
+    fields?: HandlerField[];
   }
 
   /** 枚举字典与各类上限 */

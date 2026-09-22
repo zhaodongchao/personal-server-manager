@@ -17,6 +17,7 @@ import com.serverpanel.appstack.job.JobSupport;
 import com.serverpanel.common.constant.ProtectedUnits;
 import com.serverpanel.common.exception.ErrorCode;
 import com.serverpanel.common.exception.ServiceException;
+import com.serverpanel.common.job.JobField;
 import com.serverpanel.framework.command.HostResult;
 
 import lombok.RequiredArgsConstructor;
@@ -57,9 +58,9 @@ public class ServiceJobHandler implements JobHandler {
         return new HandlerSchema(type(), "systemd 服务动作",
                 "定时对指定 systemd 服务执行 start/stop/restart/reload 等动作",
                 List.of(
-                        HandlerField.text("unit", "服务单元", true,
+                        JobField.text("unit", "服务单元", true,
                                 "如 nginx.service；命中服务保护清单的破坏性动作需确认关键字"),
-                        HandlerField.select("action", "动作", true,
+                        JobField.select("action", "动作", true,
                                 JobEnums.SERVICE_ACTIONS.stream().sorted().toList(),
                                 "stop/restart/disable/mask/kill 属破坏性动作")));
     }

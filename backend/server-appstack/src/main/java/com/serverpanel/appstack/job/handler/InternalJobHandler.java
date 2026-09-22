@@ -15,6 +15,7 @@ import com.serverpanel.appstack.job.internal.InternalTaskRegistry;
 import com.serverpanel.common.exception.ErrorCode;
 import com.serverpanel.common.exception.ServiceException;
 import com.serverpanel.common.job.InternalTask;
+import com.serverpanel.common.job.JobField;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,6 +26,10 @@ import lombok.extern.slf4j.Slf4j;
  * <p>它也是把「表达力」从 GLUE（在线编码，本方案明确不做）那里补回来的主要手段：
  * 运维真正高频需要的那几件事（备份库、清回收站、清日志、续证书）都用受控 bean 实现，
  * 而不是让用户在浏览器里写脚本。
+ *
+ * <p>内置任务的<b>专用字段</b>由任务自己声明（{@link InternalTask#fields()}），经
+ * {@code GET /appstack/job/options} 下发给前端按选中任务动态渲染；未声明字段的任务
+ * 回落到下面那个自由 JSON 文本域。
  *
  * @author zhaodc
  * @since 2026-09-22 UTC+8
@@ -51,9 +56,10 @@ public class InternalJobHandler implements JobHandler {
         return new HandlerSchema(type(), "面板内置任务",
                 "由面板自身实现的任务，安全可控，无外部命令与任意网络访问",
                 List.of(
-                        HandlerField.select("task", "内置任务", true, codes, help),
-                        HandlerField.area("params", "参数（JSON 对象）", false,
-                                "按所选任务要求填写，如 {\"databaseId\":\"123\"}")));
+                        JobField.select("task", "内置任务", true, codes, help),
+                        JobField.area("params", "参数（JSON 对象）", false,
+                                "仅当所选任务未声明专用字段时使用；声明了专用字段的任务"
+                                        + "会改按字段表单填写，本输入框自动收起")));
     }
 
     @Override

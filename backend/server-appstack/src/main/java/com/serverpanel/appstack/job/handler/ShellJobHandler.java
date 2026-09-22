@@ -18,6 +18,7 @@ import com.serverpanel.appstack.job.JobHandler;
 import com.serverpanel.appstack.job.JobSupport;
 import com.serverpanel.common.exception.ErrorCode;
 import com.serverpanel.common.exception.ServiceException;
+import com.serverpanel.common.job.JobField;
 import com.serverpanel.framework.command.CommandExecutor;
 import com.serverpanel.framework.command.HostResult;
 
@@ -69,12 +70,12 @@ public class ShellJobHandler implements JobHandler {
         return new HandlerSchema(type(), "宿主 Shell 命令",
                 "在宿主机上执行白名单命令（argv 数组，绝不经过 shell）",
                 List.of(
-                        HandlerField.select("command", "命令", true,
+                        JobField.select("command", "命令", true,
                                 commandExecutor.getWhitelist().stream().sorted().toList(),
                                 "只允许白名单内的命令名，不接受路径或命令整串"),
-                        HandlerField.area("args", "参数（每行一个）", false,
+                        JobField.area("args", "参数（每行一个）", false,
                                 "每个参数独占一行，不做 shell 解析，也不做引号处理"),
-                        HandlerField.number("timeoutSec", "超时（秒）", false,
+                        JobField.number("timeoutSec", "超时（秒）", false,
                                 "留空则使用任务级超时")));
     }
 
