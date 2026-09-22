@@ -116,6 +116,20 @@ public class ServerConfigController {
         return R.ok(service.apply(key, body == null ? null : body.getConfirm()));
     }
 
+    /**
+     * 停止托管：删除该类别写入的托管片段及其备份，使发行版原配置重新生效（设计承诺的「纯净卸载」）。
+     *
+     * <p>与生效同属破坏性入口（会触发 reload/restart），因此同样按 L3 规则要求键入关键字。
+     * 配置项文档保留在 MongoDB 中，不会丢失用户录入的内容。
+     */
+    @Audit(module = "ops", action = "config:unmanage", risky = true)
+    @SaCheckPermission("ops:config:apply")
+    @PostMapping("/category/{key}/unmanage")
+    public R<ServerConfigApplyVO> unmanage(@PathVariable("key") String key,
+                                           @RequestBody(required = false) ServerConfigActionBody body) {
+        return R.ok(service.unmanage(key, body == null ? null : body.getConfirm()));
+    }
+
     // ==================== 历史 与 恢复 ====================
 
     /**

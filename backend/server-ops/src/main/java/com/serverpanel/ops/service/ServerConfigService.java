@@ -402,6 +402,67 @@ public class ServerConfigService {
     }
 
     /**
+     * 停止托管该类别：删除发行版之外的托管片段与其全部备份，使发行版原配置重新生效。
+     *
+     * <p>这是设计里承诺的「可纯净卸载」——本模块从不改发行版主配置，所以删掉片段即回到原状。
+     * 配置项本身（Mongo 文档）保留，页面仍可继续编辑后再生效，不会丢用户录入的内容。
+     */
+    public ServerConfigApplyVO unmanage(String categoryKey, String confirm) {
+        OpsServerConfigCategory cat = requireCategory(categoryKey);
+        String key = cat.getCategoryKey();
+        ReentrantLock lock = locks.computeIfAbsent(key, k -> new ReentrantLock());
+        if (!lock.tryLock()) {
+            throw new ServiceException(ErrorCode.SERVER_CONFIG_BUSY.getCode(),
+                    "配置类别「" + nvl(cat.getName()) + "」正在生效中，请稍后重试");
+        }
+        long started = System.currentTimeMillis();
+        try {
+            Map<String, Object> managed = readManaged(key);
+            String before = managed.get("content") == null ? null : String.valueOf(managed.get("content"));
+            String beforeItems = serializeItems(listRaw(key));
+
+            // 高风险类别同样需要键入关键字：卸载 sshd 片段会重启 sshd
+            if (isL3(cat.getRiskLevel())) {
+                String want = applyKeyword(key);
+                if (!want.equals(nvl(confirm).trim())) {
+                    String msg = "该类别属高风险变更，需键入「" + want + "」二次确认";
+                    record(cat, "UNMANAGE", before, null, null, msg, null, null, 0L, null,
+                            beforeItems, beforeItems, "FAILED", msg);
+                    throw new ServiceException(ErrorCode.SERVER_CONFIG_SELF_LOCKOUT_RISK.getCode(), msg);
+                }
+            }
+
+            HostResult r = hostChannel.require().call("sys.unmanage", Map.of("categoryKey", key), 90);
+            Map<String, Object> stages = asMap(r.dataGet("stages"));
+            long ms = System.currentTimeMillis() - started;
+            String stagesText = flatten(stages);
+            if (!Boolean.TRUE.equals(r.dataGet("unmanaged"))) {
+                String msg = "停止托管失败：" + firstNonBlank(stageError(stages), r.getStderr(), r.errorText());
+                record(cat, "UNMANAGE", before, null, null, null, stagesText, stagesText, ms, null,
+                        beforeItems, beforeItems, "FAILED", msg);
+                throw new ServiceException(ErrorCode.SERVER_CONFIG_APPLY_FAILED.getCode(), msg);
+            }
+            String changeId = record(cat, "UNMANAGE", before, null, null,
+                    "已删除托管片段", stagesText, stagesText, ms, null,
+                    beforeItems, beforeItems, "SUCCESS", null);
+
+            ServerConfigApplyVO vo = new ServerConfigApplyVO();
+            vo.setCategoryKey(key);
+            vo.setOp("UNMANAGE");
+            vo.setApplied(Boolean.TRUE);
+            vo.setRolledBack(Boolean.FALSE);
+            vo.setMessage("已停止托管该类别，发行版原配置重新生效");
+            vo.setChangeId(changeId);
+            vo.setApplyOutput(stagesText);
+            vo.setDurationMs(ms);
+            vo.setStages(stages);
+            return vo;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
      * 生效主链路（9 道闸门），同时服务于 APPLY 与 RESTORE。
      *
      * @param persistAfter 非空时表示恢复场景：生效成功后把这份配置项写回 Mongo
