@@ -130,7 +130,10 @@ watch(
   (open) => {
     if (!open) return;
     detail.value = undefined;
-    scope.value = props.categoryKey || 'all';
+    // 默认「全部类别」而不是当前页签：变更历史是全局审计轨迹，
+    // 若默认按页签过滤，从「内核参数」进来会看到空列表（而实际上其它类别有大量记录），
+    // 很容易被误判为「功能没生效」。当前类别就在旁边的按钮组里，一次点击即可切回。
+    scope.value = 'all';
     pageNum.value = 1;
     void load();
   },
