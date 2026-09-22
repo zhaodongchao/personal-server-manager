@@ -2,6 +2,8 @@ export * from './core';
 export * from './appstack';
 export * from './dashboard';
 export * from './file';
+export * from './job';
+export * from './job-log';
 export * from './monitor';
 export * from './nginx';
 export * from './ops';
