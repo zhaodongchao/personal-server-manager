@@ -59,8 +59,17 @@ public class RecycleService {
         Path trashTarget = trash.resolve(trashName);
         try {
             Files.move(source, trashTarget, StandardCopyOption.ATOMIC_MOVE);
-        } catch (IOException e) {
-            throw new ServiceException(ErrorCode.ERROR.getCode(), "移入回收站失败");
+        } catch (IOException atomicFailed) {
+            // 容器化部署下，白名单根目录与回收站目录是**不同的 bind mount**：
+            // 即使同属一个文件系统（st_dev 相同），rename(2) 仍返回 EXDEV，
+            // ATOMIC_MOVE 必然失败 —— 对外表现为「移入回收站失败」，整个回收站不可用。
+            // 退化为普通 move：跨挂载时由 JDK 自行 copy + delete（目标名带时间戳前缀，
+            // 不会覆盖既有条目，非原子移动在这里是安全的）。
+            try {
+                Files.move(source, trashTarget);
+            } catch (IOException e) {
+                throw new ServiceException(ErrorCode.ERROR.getCode(), "移入回收站失败");
+            }
         }
 
         FileRecycleBin rec = new FileRecycleBin();
