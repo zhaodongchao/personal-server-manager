@@ -95,7 +95,16 @@ public enum ErrorCode {
     NGINX_DOMAIN_CONFLICT(6012, "域名已被其它站点使用"),
     NGINX_UPSTREAM_IN_USE(6013, "上游组仍被站点引用，无法删除"),
     NGINX_CERT_IN_USE(6014, "证书仍被站点引用，无法删除"),
-    NGINX_STREAM_PORT_CONFLICT(6015, "监听端口已被其它转发占用");
+    NGINX_STREAM_PORT_CONFLICT(6015, "监听端口已被其它转发占用"),
+
+    // ===== 服务器配置管理 6020+ =====
+    SERVER_CONFIG_CATEGORY_NOT_FOUND(6020, "配置类别不存在"),
+    SERVER_CONFIG_VALIDATE_FAILED(6021, "配置校验未通过，未做任何变更"),
+    SERVER_CONFIG_APPLY_FAILED(6022, "配置生效失败，已自动回滚"),
+    SERVER_CONFIG_BACKUP_FAILED(6023, "配置备份失败，已中止生效"),
+    SERVER_CONFIG_SELF_LOCKOUT_RISK(6024, "该变更可能导致自身失联，需二次确认"),
+    SERVER_CONFIG_ITEM_INVALID(6025, "配置项不合法"),
+    SERVER_CONFIG_BUSY(6026, "该配置类别正在生效中，请稍后重试");
 
     private final int code;
     private final String message;
