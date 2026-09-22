@@ -218,6 +218,15 @@ public class JobService {
         if (logId == null) {
             throw new ServiceException(ErrorCode.JOB_NOT_FOUND);
         }
+        // 被阻塞策略丢弃、或被前置检查（停用 / 执行器熔断 / 宿主通道不可用）拦下时，
+        // trigger 同样会返回一个 logId。从前这里直接 return，接口回「已派发执行，请到
+        // 日志查看结果」，可实际上什么都没跑 —— 用户得自己进日志页才发现。
+        // 现在把「没跑」如实报成失败，原因就用 trigger 当场写下的那句话。
+        AppJobLog entry = logMapper.selectById(logId);
+        if (entry != null && JobEnums.STATUS_DISCARDED.equals(entry.getStatus())) {
+            String reason = entry.getTriggerMsg() == null ? "被阻塞策略丢弃" : entry.getTriggerMsg();
+            throw new ServiceException(ErrorCode.JOB_TRIGGER_DISCARDED, "任务未被执行：" + reason);
+        }
         return logId;
     }
 

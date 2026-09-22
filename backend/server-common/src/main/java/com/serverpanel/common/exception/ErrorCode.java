@@ -111,7 +111,8 @@ public enum ErrorCode {
     JOB_SHELL_NOT_ALLOWED(6036, "命令不在白名单内，不允许执行"),
     JOB_LOG_NOT_FOUND(6037, "任务日志不存在"),
     JOB_NAME_EXISTS(6038, "任务名或执行器 AppName 已存在"),
-    JOB_CONFIRM_REQUIRED(6039, "该操作存在风险，需确认关键字");
+    JOB_CONFIRM_REQUIRED(6039, "该操作存在风险，需确认关键字"),
+    JOB_TRIGGER_DISCARDED(6040, "任务未被执行（被阻塞策略或前置检查拦下）");
 
     private final int code;
     private final String message;

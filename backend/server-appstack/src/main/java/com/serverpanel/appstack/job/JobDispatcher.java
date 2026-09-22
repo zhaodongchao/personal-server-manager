@@ -10,9 +10,9 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.locks.ReentrantLock;
 
 import org.springframework.stereotype.Component;
 
@@ -53,6 +53,14 @@ public class JobDispatcher {
     /** 失败重试的固定间隔（毫秒），v1 不做指数退避 */
     private static final long RETRY_INTERVAL_MS = 5000L;
 
+    /** 「停止执行」写入终态时的说明（宿主进程不会被跨容器终止，措辞必须诚实） */
+    private static final String KILLED_BY_STOP =
+            "被手动停止：面板侧执行线程已请求终止；SHELL/SERVICE 的真实执行体在宿主侧，进程可能仍在运行";
+
+    /** 「COVER_EARLY 覆盖」写入终态时的说明 */
+    private static final String KILLED_BY_COVER =
+            "被 COVER_EARLY 覆盖：面板侧执行线程已请求终止；SHELL/SERVICE 的真实执行体在宿主侧，进程可能仍在运行";
+
     private final AppJobMapper jobMapper;
 
     private final AppExecutorMapper executorMapper;
@@ -72,8 +80,19 @@ public class JobDispatcher {
     private final ExecutorService execPool = Executors.newThreadPerTaskExecutor(
             Thread.ofVirtual().name("job-exec-", 0).factory());
 
-    /** 任务级锁：同一任务不并发，是三种阻塞策略共同的实现基础 */
-    private final Map<Long, ReentrantLock> locks = new ConcurrentHashMap<>();
+    /**
+     * 任务级闸门：同一任务不并发，是三种阻塞策略共同的实现基础。
+     *
+     * <p><b>为什么是 {@link Semaphore} 而不是 {@code ReentrantLock}</b>：闸门在
+     * <b>调用线程</b>（HTTP 请求线程 / 调度线程）上获取，却在<b>执行线程</b>
+     * （{@code execPool} 的虚拟线程）里释放。{@code ReentrantLock.unlock()} 会校验
+     * 「释放者是否就是持有者」，跨线程释放直接抛 {@code IllegalMonitorStateException}；
+     * 而这个异常发生在 {@code finally} 里，会被 {@code Future} 静默吞掉，后果是
+     * <b>闸门永不释放 —— 同一个任务第二次触发起全部被阻塞策略丢弃，任务实际只跑一次</b>
+     * （短任务 + 只跑一次的冒烟测试完全看不出来）。{@code Semaphore} 的
+     * acquire / release 不绑定线程，正是这里需要的语义。
+     */
+    private final Map<Long, Semaphore> locks = new ConcurrentHashMap<>();
 
     /** 正在执行的实例（供 COVER_EARLY 与「停止执行」使用） */
     private final Map<Long, Running> running = new ConcurrentHashMap<>();
@@ -137,8 +156,8 @@ public class JobDispatcher {
         }
 
         int timeoutSec = effectiveTimeout(job);
-        ReentrantLock lock = locks.computeIfAbsent(jobId, key -> new ReentrantLock());
-        if (!lock.tryLock()) {
+        Semaphore lock = locks.computeIfAbsent(jobId, key -> new Semaphore(1));
+        if (!lock.tryAcquire()) {
             String strategy = job.getBlockStrategy() == null
                     ? JobEnums.BLOCK_SERIAL : job.getBlockStrategy();
             if (JobEnums.BLOCK_DISCARD_LATER.equals(strategy)) {
@@ -167,13 +186,15 @@ public class JobDispatcher {
             } catch (RuntimeException e) {
                 // 兜底：执行流程本身抛异常时不能让日志永远停在 RUNNING
                 log.warn("定时任务「{}」执行流程异常：{}", job.getJobName(), e.getMessage());
-                recorder.recordHandle(entry.getId(), false,
+                int written = recorder.recordHandle(entry.getId(), false,
                         "执行流程异常：" + e.getMessage(), null,
                         System.currentTimeMillis() - startedAt, JobEnums.STATUS_FAILED, 0);
-                writeBack(job, JobEnums.STATUS_FAILED, false);
+                if (written > 0) {
+                    writeBack(job, JobEnums.STATUS_FAILED, false);
+                }
             } finally {
                 running.remove(jobId, state);
-                lock.unlock();
+                lock.release();
             }
         });
         state.future = future;
@@ -191,10 +212,11 @@ public class JobDispatcher {
         if (current == null || current.future == null) {
             return null;
         }
+        // 顺序很重要：先把日志落定为 KILLED，再中断线程。反过来的话，被中断的执行线程会
+        // 抢先回填 FAILED（甚至在写 handle_* 时抛 "Error updating database"），把 KILLED
+        // 覆盖掉 —— 用户按下「停止」，日志里看到的却是「失败」。
+        recorder.markKilled(current.logId, KILLED_BY_STOP);
         boolean terminated = current.future.cancel(true);
-        recorder.markKilled(current.logId, terminated
-                ? "被手动停止"
-                : "已发出停止请求，但真实执行体在宿主侧，进程可能仍在运行");
         return new StopResult(current.logId, terminated);
     }
 
@@ -243,9 +265,9 @@ public class JobDispatcher {
         return entry.getId();
     }
 
-    private boolean tryLockFor(ReentrantLock lock, int timeoutSec) {
+    private boolean tryLockFor(Semaphore lock, int timeoutSec) {
         try {
-            return lock.tryLock(Math.max(timeoutSec, 1), TimeUnit.SECONDS);
+            return lock.tryAcquire(Math.max(timeoutSec, 1), TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return false;
@@ -266,12 +288,10 @@ public class JobDispatcher {
         if (current == null || current.future == null) {
             return "无在跑实例";
         }
-        boolean cancelled = current.future.cancel(true);
-        String reason = cancelled
-                ? "被 COVER_EARLY 中断（面板侧线程已真实终止）"
-                : "被 COVER_EARLY 覆盖：真实执行体在宿主侧，进程可能仍在运行";
-        recorder.markKilled(current.logId, reason);
-        return reason;
+        // 同 stop()：先落终态再中断，避免被覆盖前次的日志最终显示成 FAILED
+        recorder.markKilled(current.logId, KILLED_BY_COVER);
+        current.future.cancel(true);
+        return "前次实例已标记 KILLED";
     }
 
     // ==================== 执行 ====================
@@ -321,8 +341,15 @@ public class JobDispatcher {
         String status = result.success()
                 ? JobEnums.STATUS_SUCCESS
                 : (timedOut ? JobEnums.STATUS_TIMEOUT : JobEnums.STATUS_FAILED);
-        recorder.recordHandle(logId, result.success(), result.message(), result.output(),
-                duration, status, attempt);
+        int written = recorder.recordHandle(logId, result.success(), result.message(),
+                result.output(), duration, status, attempt);
+        if (written == 0) {
+            // 该日志已被 stop / COVER_EARLY 落定为 KILLED，本次结果属于「已经被终止的那一次」，
+            // 不该再回写任务的 lastStatus / failStreak —— 否则一次被终止的执行会把任务
+            // 标成失败，还会累积执行器熔断计数。
+            log.info("定时任务「{}」的结果未回写：日志 {} 已被终止标记", job.getJobName(), logId);
+            return;
+        }
         writeBack(job, status, result.success());
         if (!JobEnums.TYPE_BUILTIN.equals(executor.getType())) {
             recordExecutorHealth(executor, result.success(), result.message());

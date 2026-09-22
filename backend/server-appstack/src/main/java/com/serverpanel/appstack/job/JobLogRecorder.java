@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 import org.springframework.stereotype.Component;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.serverpanel.appstack.config.JobProperties;
 import com.serverpanel.appstack.entity.AppExecutor;
 import com.serverpanel.appstack.entity.AppJob;
@@ -55,35 +56,53 @@ public class JobLogRecorder {
         return entry;
     }
 
-    /** 回填执行段并落最终状态 */
-    public void recordHandle(Long logId, boolean success, String message, String output,
-                             long durationMs, String status, int retryIndex) {
+    /**
+     * 回填执行段并落最终状态。
+     *
+     * <p><b>单向门</b>：只有当前状态仍为 {@code RUNNING} 的日志才会被回填。执行线程可能在
+     * 「已被 stop / COVER_EARLY 落定为 KILLED」之后才跑完并把结果写回来，若无条件覆盖，
+     * 用户在日志页看到的会是「失败」，而他刚刚按下的是「停止」。
+     *
+     * @return 实际更新行数；0 表示该日志已是终态（已被终止标记），调用方不应再回写任务统计
+     */
+    public int recordHandle(Long logId, boolean success, String message, String output,
+                            long durationMs, String status, int retryIndex) {
         if (logId == null) {
-            return;
+            return 0;
         }
-        AppJobLog patch = new AppJobLog();
-        patch.setId(logId);
-        patch.setHandleTime(LocalDateTime.now());
-        patch.setHandleCode(success ? JobEnums.HANDLE_SUCCESS : JobEnums.HANDLE_FAILED);
-        patch.setHandleMsg(JobSupport.truncate(message, 900));
-        patch.setHandleDurationMs(durationMs);
-        patch.setStatus(status);
-        patch.setRetryIndex(retryIndex);
-        patch.setExecutorOutput(JobSupport.truncate(output, properties.getLog().getMaxOutputBytes()));
-        logMapper.updateById(patch);
+        LambdaUpdateWrapper<AppJobLog> wrapper = new LambdaUpdateWrapper<AppJobLog>()
+                .eq(AppJobLog::getId, logId)
+                .eq(AppJobLog::getStatus, JobEnums.STATUS_RUNNING)
+                .set(AppJobLog::getHandleTime, LocalDateTime.now())
+                .set(AppJobLog::getHandleCode,
+                        success ? JobEnums.HANDLE_SUCCESS : JobEnums.HANDLE_FAILED)
+                .set(AppJobLog::getHandleMsg, JobSupport.truncate(message, 900))
+                .set(AppJobLog::getHandleDurationMs, durationMs)
+                .set(AppJobLog::getStatus, status)
+                .set(AppJobLog::getRetryIndex, retryIndex)
+                .set(AppJobLog::getExecutorOutput,
+                        JobSupport.truncate(output, properties.getLog().getMaxOutputBytes()));
+        return logMapper.update(null, wrapper);
     }
 
-    /** 标记为被 COVER_EARLY 终止/覆盖 */
+    /**
+     * 标记为被 COVER_EARLY 覆盖 / 被手动停止。
+     *
+     * <p>同样以 {@code status = RUNNING} 为前置条件：若该次执行其实已经正常结束
+     * （SUCCESS / FAILED / TIMEOUT），迟到的「终止」不该把既成事实改写掉。
+     */
     public void markKilled(Long logId, String reason) {
         if (logId == null) {
             return;
         }
-        AppJobLog patch = new AppJobLog();
-        patch.setId(logId);
-        patch.setStatus(JobEnums.STATUS_KILLED);
-        patch.setHandleCode(JobEnums.HANDLE_FAILED);
-        patch.setHandleMsg(JobSupport.truncate(reason, 900));
-        logMapper.updateById(patch);
+        LambdaUpdateWrapper<AppJobLog> wrapper = new LambdaUpdateWrapper<AppJobLog>()
+                .eq(AppJobLog::getId, logId)
+                .eq(AppJobLog::getStatus, JobEnums.STATUS_RUNNING)
+                .set(AppJobLog::getStatus, JobEnums.STATUS_KILLED)
+                .set(AppJobLog::getHandleCode, JobEnums.HANDLE_FAILED)
+                .set(AppJobLog::getHandleMsg, JobSupport.truncate(reason, 900))
+                .set(AppJobLog::getHandleTime, LocalDateTime.now());
+        logMapper.update(null, wrapper);
     }
 
     /**
