@@ -113,7 +113,17 @@ public enum ErrorCode {
     JOB_LOG_NOT_FOUND(6037, "任务日志不存在"),
     JOB_NAME_EXISTS(6038, "任务名或执行器 AppName 已存在"),
     JOB_CONFIRM_REQUIRED(6039, "该操作存在风险，需确认关键字"),
-    JOB_TRIGGER_DISCARDED(6040, "任务未被执行（被阻塞策略或前置检查拦下）");
+    JOB_TRIGGER_DISCARDED(6040, "任务未被执行（被阻塞策略或前置检查拦下）"),
+
+    // ===== 7xxx 日常工具（server-tools） =====
+    TOOLS_TEXT_TOO_LARGE(7001, "文本过长，超出单次处理上限"),
+    TOOLS_ALG_UNSUPPORTED(7002, "不支持的算法或编码方式"),
+    TOOLS_KEY_INVALID(7003, "密钥或 IV 不合法（长度、编码不符合算法要求）"),
+    TOOLS_CRYPTO_FAILED(7004, "加解密失败，请检查密钥、IV 与输入编码"),
+    TOOLS_ENCODING_INVALID(7005, "输入不是合法的 Base64 / Hex 编码"),
+    TOOLS_PARAM_INVALID(7006, "混淆参数不合法"),
+    TOOLS_METHOD_UNSUPPORTED(7007, "不支持的混淆方式"),
+    TOOLS_DEOBFUSCATE_FAILED(7008, "反混淆失败，输入可能不是该方式生成的");
 
     private final int code;
     private final String message;

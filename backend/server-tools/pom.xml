@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.serverpanel</groupId>
+    <artifactId>serverpanel-backend</artifactId>
+    <version>1.0.0</version>
+  </parent>
+
+  <artifactId>server-tools</artifactId>
+  <name>ServerPanel :: Tools</name>
+  <description>日常工具：字符串加解密、可逆混淆（纯计算，不触碰宿主资源）</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.serverpanel</groupId>
+      <artifactId>server-framework</artifactId>
+    </dependency>
+  </dependencies>
+</project>

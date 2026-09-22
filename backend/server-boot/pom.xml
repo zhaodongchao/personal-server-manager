@@ -34,6 +34,10 @@
       <groupId>com.serverpanel</groupId>
       <artifactId>server-appstack</artifactId>
     </dependency>
+    <dependency>
+      <groupId>com.serverpanel</groupId>
+      <artifactId>server-tools</artifactId>
+    </dependency>
   </dependencies>
 
   <build>

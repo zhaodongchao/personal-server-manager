@@ -26,6 +26,7 @@
     <module>server-file</module>
     <module>server-ops</module>
     <module>server-appstack</module>
+    <module>server-tools</module>
     <module>server-boot</module>
   </modules>
 
@@ -82,6 +83,11 @@
       <dependency>
         <groupId>com.serverpanel</groupId>
         <artifactId>server-appstack</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.serverpanel</groupId>
+        <artifactId>server-tools</artifactId>
         <version>${project.version}</version>
       </dependency>
       <!-- MyBatis-Plus（Spring Boot 4 专用 starter） -->

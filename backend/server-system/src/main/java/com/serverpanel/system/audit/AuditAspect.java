@@ -57,6 +57,9 @@ public class AuditAspect {
     /** error_msg 字段最大 500（与 V1 建表宽度一致） */
     private static final int ERROR_MAX = 500;
 
+    /** @Audit(recordParams = false) 时写入 params 的占位文本 */
+    private static final String PARAMS_REDACTED = "[按端点配置不记录入参]";
+
     /**
      * 入参中的敏感键：键名含下列片段（大小写不敏感）的字符串值一律替换为 ***。
      * 只匹配「被引号包裹的值」，因此 "password":null 不受影响。

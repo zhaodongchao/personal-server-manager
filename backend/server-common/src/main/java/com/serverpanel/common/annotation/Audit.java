@@ -58,4 +58,20 @@ public @interface Audit {
      * <p>可用 {@code serverpanel.audit.enforce-safe=false} 整体关停，无需发版。
      */
     boolean safe() default false;
+
+    /**
+     * 是否记录入参。
+     *
+     * <p>默认 true（既有行为不变）。置 false 时，该端点的 <b>入参整体不落库</b>：
+     * sys_audit_log.params 写入固定占位 {@code [按端点配置不记录入参]}，
+     * 但仍保留「谁、在什么时候、调用了哪个能力、结果如何」的留痕。
+     *
+     * <p>用途：处理口令 / Token / 密钥之类的端点（如 POST /auth/safe、日常工具的
+     * 加解密与混淆接口）。这类端点如果记入参，等于把用户刚输入的敏感明文复制一份
+     * 进审计表 —— 脱敏只能掩盖命中键名的值，而工具接口的入参键名是 text / key，
+     * 不在敏感词表里，脱敏根本不会生效。
+     *
+     * <p>取舍与 /auth/safe 一致：宁可少记入参，也不能让审计表本身成为泄露源。
+     */
+    boolean recordParams() default true;
 }
