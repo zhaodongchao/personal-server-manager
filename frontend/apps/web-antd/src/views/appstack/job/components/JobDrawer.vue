@@ -9,7 +9,8 @@
  * <p>参数区是<b>两层动态</b>的：选 INTERNAL 处理器后，具体内置任务的专用字段
  * （如 DB_BACKUP 的 databaseId）来自 /job/options 的 internalTasks[].fields。
  * 任务声明了专用字段时，自由 JSON 文本域会收起 —— 两者并存会让同名字段出现两个入口，
- * 保存时无法判断该信谁。字段值统一存在同一个扁平 params 对象里，提交时收进 params 子对象。
+ * 保存时无法判断该信谁；声明「无参数」（freeFormParams=false）的任务同样不渲染该输入框。
+ * 字段值统一存在同一个扁平 params 对象里，提交时收进 params 子对象。
  *
  * <p>两处刻意的交互设计：
  * <ul>
@@ -115,9 +116,20 @@ const taskFields = computed(() =>
   ),
 );
 
-/** 实际渲染的参数字段：任务声明了专用字段时用它替换掉 JSON 文本域 */
+/**
+ * 是否收起「参数（JSON 对象）」文本域。
+ *
+ * <p>两种情况：任务声明了专用字段（由字段表单接管），或任务明确声明无参数
+ * （freeFormParams === false）—— 一个永远不该填的输入框只会让人犹豫该填什么。
+ */
+const skipFreeFormParams = computed(
+  () =>
+    taskFields.value.length > 0 || activeTask.value?.freeFormParams === false,
+);
+
+/** 实际渲染的参数字段 */
 const renderFields = computed(() =>
-  taskFields.value.length > 0
+  skipFreeFormParams.value
     ? [
         ...currentFields.value.filter((field) => field.name !== 'params'),
         ...taskFields.value,
@@ -360,8 +372,8 @@ function buildPayload(): Record<string, any> {
   const payload: Record<string, any> = {};
   const structured = taskFields.value.length > 0;
   for (const field of currentFields.value) {
-    // 内置任务已声明专用字段时，params 文本域已被结构化字段接管，跳过
-    if (field.name === 'params' && structured) continue;
+    // 结构化字段或「无参数」任务都会接管 params 文本域，跳过
+    if (field.name === 'params' && skipFreeFormParams.value) continue;
     const raw = params[field.name];
     if (isBlank(raw)) continue;
     if (JSON_FIELDS.has(field.name)) {

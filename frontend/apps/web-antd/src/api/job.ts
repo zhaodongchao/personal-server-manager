@@ -126,6 +126,10 @@ export namespace JobApi {
      * <p>为空时界面回落到「参数（JSON 对象）」文本域；非空则按字段渲染结构化表单。
      */
     fields?: HandlerField[];
+    /**
+     * 是否接受自由 JSON 参数；false 表示该任务无参数，界面不渲染参数输入框。
+     */
+    freeFormParams?: boolean;
   }
 
   /** 枚举字典与各类上限 */

@@ -298,6 +298,7 @@ public class JobService {
             item.put("label", task.label());
             item.put("description", task.description());
             item.put("fields", task.fields());
+            item.put("freeFormParams", task.freeFormParams());
             return item;
         }).toList());
         options.put("minIntervalSeconds", properties.getLimits().getMinIntervalSeconds());

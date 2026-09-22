@@ -42,6 +42,17 @@ public class NginxCertRenewTask implements InternalTask {
         return "续期临期证书、刷新到期状态并告警（等价于面板每日 03:30 的内置维护）";
     }
 
+    /**
+     * 无参数：续期范围由面板的证书托管配置决定，不接受任务级覆盖。
+     *
+     * @author zhaodc
+     * @since 2026-09-23 UTC+8
+     */
+    @Override
+    public boolean freeFormParams() {
+        return false;
+    }
+
     @Override
     public Result execute(Map<String, String> params) {
         nginxService.dailyCertMaintenance();

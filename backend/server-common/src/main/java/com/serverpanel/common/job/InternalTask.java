@@ -53,6 +53,22 @@ public interface InternalTask {
     }
 
     /**
+     * 是否接受自由 JSON 参数（仅在 {@link #fields()} 为空时有意义）。
+     *
+     * <p>默认 {@code true} —— 保留那个可选的「参数（JSON 对象）」输入框，让不声明字段的
+     * 任务也能传参。声明「本任务没有参数」的任务返回 {@code false}，界面就不再渲染它：
+     * 一个永远不该填的输入框，只会让人犹豫该填什么。
+     *
+     * @return 是否显示自由参数输入框
+     *
+     * @author zhaodc
+     * @since 2026-09-23 UTC+8
+     */
+    default boolean freeFormParams() {
+        return true;
+    }
+
+    /**
      * 执行。
      *
      * @param params 任务参数（字符串键值，由用户在任务里填写）

@@ -43,6 +43,17 @@ public class RecycleCleanupTask implements InternalTask {
         return "按保留天数清理回收站中已过期的条目（等价于面板每日 03:30 的内置清理）";
     }
 
+    /**
+     * 无参数：保留天数由面板文件模块的配置决定，不接受任务级覆盖。
+     *
+     * @author zhaodc
+     * @since 2026-09-23 UTC+8
+     */
+    @Override
+    public boolean freeFormParams() {
+        return false;
+    }
+
     @Override
     public Result execute(Map<String, String> params) {
         recycleService.cleanupExpired();
