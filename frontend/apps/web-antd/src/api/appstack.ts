@@ -19,24 +19,6 @@ export namespace AppstackApi {
     created: number;
   }
 
-  /** 网站 */
-  export interface Website {
-    id?: string;
-    domain: string;
-    siteName: string;
-    siteType: 'proxy' | 'static';
-    upstream?: string;
-    staticRoot?: string;
-    sslEnabled?: number;
-    certPath?: string;
-    keyPath?: string;
-    confPath?: string;
-    status?: number;
-    remark?: string;
-    createdAt?: string;
-    updatedAt?: string;
-  }
-
   /** 数据库 */
   export interface Database {
     id?: string;
@@ -74,41 +56,6 @@ export async function getImageListApi() {
 export async function pullImageApi(image: string) {
   return requestClient.post('/appstack/docker/images/pull', { image });
 }
-
-// ==================== Nginx 网站 ====================
-
-export async function getWebsitePageApi(params: {
-  keyword?: string;
-  pageNum?: number;
-  pageSize?: number;
-}) {
-  return requestClient.get('/appstack/website/page', { params });
-}
-
-export async function getNginxStatusApi() {
-  return requestClient.get<boolean>('/appstack/website/nginx-status');
-}
-
-export async function getWebsiteConfApi(id: string) {
-  return requestClient.get<string>(`/appstack/website/${id}/conf`);
-}
-
-export async function createWebsiteApi(body: AppstackApi.Website) {
-  return requestClient.post('/appstack/website', body);
-}
-
-export async function updateWebsiteApi(body: AppstackApi.Website) {
-  return requestClient.put('/appstack/website', body);
-}
-
-export async function toggleWebsiteApi(id: string, status: number) {
-  return requestClient.put(`/appstack/website/${id}/status/${status}`);
-}
-
-export async function deleteWebsiteApi(id: string) {
-  return requestClient.delete(`/appstack/website/${id}`);
-}
-
 // ==================== MySQL 数据库 ====================
 
 export async function getDatabasePageApi(params: {

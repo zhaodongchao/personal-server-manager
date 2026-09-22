@@ -44,8 +44,8 @@
 | 2xxx | 系统管理 | `2001` 用户已存在、`2002` 角色已存在、`2003` 内置数据、`2004` 不能删自己、`2005` 有子菜单、`2006` 角色在用、`2007/2008` 字典重复、`2009` 参数键重复 |
 | 3xxx | 监控 | `3001` 采集器未就绪 |
 | 4xxx | 文件 | `4001` 路径越权、`4002` 目标已存在、`4003` 源路径不存在、`4004` 根目录受限、`4005` 文件过大、`4006` 非文本、`4007` 压缩格式不支持、`4008` 回收站记录失效、`4009` 权限非法、`4010` 目录非空 |
-| 5xxx | 运维 | `5001` 命令不在白名单、`5002` 超时、`5003` 进程不存在、`5004` 服务不可管理、`5005` cron 非法、`5006` 任务不存在、`5007` 无可用防火墙、`5008` 规则不存在、`5009` 宿主通道不可用、`5010` 宿主通道版本不匹配（已降级只读）、`5011` 服务操作被保护清单拦截、`5012` 计划任务执行中（并发互斥）、`5013` cron 补跑次数超上限、`5014` 防火墙规则编号已变化、`5015` 该操作会切断 SSH/面板访问（需二次确认）、`5016` 目标规则由外部程序托管（禁止面板删除）、`5017` 防火墙变更不可回滚 |
-| 6xxx | 应用栈 | `6001` Docker 不可用、`6002` 资源不存在、`6003` 域名已存在、`6004` Nginx 不可用、`6005` 配置校验失败、`6006` MySQL 管理连接不可用、`6007` 标识符非法、`6008` 库已存在、`6009` 库不存在 |
+| 5xxx | 运维 | `5001` 命令不在白名单、`5002` 超时、`5003` 进程不存在、`5004` 服务不可管理、`5007` 无可用防火墙、`5008` 规则不存在、`5009` 宿主通道不可用、`5010` 宿主通道版本不匹配（已降级只读）、`5011` 服务操作被保护清单拦截、`5014` 防火墙规则编号已变化、`5015` 该操作会切断 SSH/面板访问（需二次确认）、`5016` 目标规则由外部程序托管（禁止面板删除）、`5017` 防火墙变更不可回滚 |
+| 6xxx | 应用栈 | `6001` Docker 不可用、`6002` 资源不存在、`6004` Nginx 不可用、`6005` 配置校验失败、`6006` MySQL 管理连接不可用、`6007` 标识符非法、`6008` 库已存在、`6009` 库不存在 |
 | 6xxx | Nginx 管理 | `6010` 实例不存在、`6011` 危险操作需二次确认（confirm 关键字）、`6012` ACME 模式不支持、`6013` DNS-01 仅支持通配符、`6014` 证书不存在或状态非法、`6015` 配置渲染/校验失败 |
 | 6xxx | 服务器配置 | `6020` 配置类别不存在、`6021` 预演校验未通过、`6022` 生效失败（已自动回滚）、`6023` 备份失败、`6024` 高风险变更需键入关键字（防自锁护栏）、`6025` 配置项取值非法或违反安全规则、`6026` 该类别正在生效中（并发互斥） |
 
@@ -506,35 +506,7 @@ ProcessInfo：`pid`(number)、`user`、`cpu`、`mem`、`stat`、`elapsed`、`cmd
 里合法但无法被 `systemctl show`，**批量查询整批会因此中止**，后端会先过滤模板单元、
 失败时按二分降到单单元重试。
 
-### 3. 计划管理 `ops/cron`
-
-| 方法 | 路径 | 权限 | 说明 |
-| ---- | ---- | ---- | ---- |
-| GET | `/page?keyword=&status=&lastResult=&pageNum=&pageSize=` | `ops:cron:list` | 任务分页 |
-| GET | `/summary` | `ops:cron:list` | 统计（total/enabled/disabled/running/failed24h） |
-| POST | `/preview` | `ops:cron:list` | 表达式预览（cron-utils 中文描述 + 未来 N 次执行时间） |
-| GET | `/commands/whitelist` | `ops:cron:list` | 可执行命令白名单（含宿主机可用性标注） |
-| POST | `/` | `ops:cron:add` | 新增 |
-| PUT | `/` | `ops:cron:edit` | 编辑 |
-| PATCH | `/{id}/status` | `ops:cron:status` | 启用/停用（body `{status: 1\|0}`） |
-| DELETE | `/{id}` | `ops:cron:delete` | 删除（高危审计） |
-| POST | `/batch-delete` | `ops:cron:delete` | 批量删除（body `{ids: [...]}`） |
-| POST | `/{id}/run` | `ops:cron:run` | 立即执行，返回 `data: logId`（高危审计） |
-| GET | `/{id}/logs` | `ops:cron:list` | 执行日志分页（可按 result 筛选） |
-| GET | `/{id}/logs/{logId}` | `ops:cron:list` | 单条日志详情（前端轮询至 `finishedAt` 非空） |
-| GET | `/{id}/logs/{logId}/download` | `ops:cron:list` | 下载完整输出 |
-| DELETE | `/{id}/logs` | `ops:cron:log-clean` | 清空该任务日志（高危审计） |
-
-要点：
-- **命令经宿主执行通道执行**（argv 数组、禁止 shell），首词必须在白名单内；
-- `splitCommand` 支持引号分词（`"..."` / `'...'`），如 `df -h "/"`；
-- 退出码语义：`0` 成功、`-1` 失败、`-2` 超时（`timedOut=1`）、`-3` 并发互斥跳过；
-- `misfirePolicy`（skip/run_once/catch_up，补跑上限 10）、`overlapPolicy`（skip/queue/parallel）、
-  `maxFail`（连续失败自动停用阈值，0=不自动停用）；
-- 并发互斥用 `UPDATE ... SET running=1 WHERE id=? AND running=0` 原子抢占；
-- 日志清理：每日 03:30 按天清理 + 每任务保留最新 N 条。
-
-### 4. 防火墙 `ops/firewall`
+### 3. 防火墙 `ops/firewall`
 
 > 除「读」以外全部是高危动作：读需要 `ops:firewall:list`，增删规则需要 `ops:firewall:write`，
 > 全局开关/看门狗需要 `ops:firewall:danger`，回滚需要 `ops:firewall:rollback`。
@@ -598,19 +570,19 @@ FirewallRule {
 `systemd-run --on-active=N` 一次性定时器；N 秒内无人调 `/guard/confirm` 即自动回滚，
 防止「改完就失联、连撤销的机会都没有」。
 
-### 5. 宿主执行通道 `ops/host`
+### 4. 宿主执行通道 `ops/host`
 
 | 方法 | 路径 | 权限 | 说明 |
 | ---- | ---- | ---- | ---- |
 | GET | `/capability` | `ops:service:list` | 通道能力快照（可用性/模式/协议版本/缺失项/安装指引） |
 | POST | `/probe` | `ops:service:list` | 主动重探（安装宿主代理后无需重启面板） |
 
-服务管理、计划管理、防火墙三个模块的系统命令全部经此通道在**宿主机**执行：
+服务管理、防火墙两个模块的系统命令全部经此通道在**宿主机**执行：
 面板容器（eclipse-temurin:21-jre）里没有 systemctl / journalctl / ufw / df，
 过去这些功能在容器内空转。通道不可用时（未安装代理 / socket 不可达）写接口返回 `5009`，
 前端整页只读降级并给出安装指引。通道部署见 `documents/production-deployment.md` 第十一节。
 
-### 6. Nginx 管理 `ops/nginx`
+### 5. Nginx 管理 `ops/nginx`
 
 > 静态配置生成型：Web 录入意图 → 存库 → FreeMarker 渲染 conf → 写入 nginx 托管目录 →
 > `nginx -t` 校验 → `reload` 生效；证书走内置 ACME（HTTP-01 / DNS-01 通配符）。
@@ -668,7 +640,7 @@ DNS-01 通配符两步流——首步 `issue` 返回需添加的 TXT 记录名/�
 需 `confirm` 关键字二次确认，错误码 `6011`。**
 
 
-### 7. 服务器配置管理 `ops/config`
+### 6. 服务器配置管理 `ops/config`
 
 > 非侵入式系统配置管理：Web 录入 → 存库（MongoDB）→ 渲染 drop-in 片段 → 经宿主通道生效
 > → 权威校验 + 回读。每次破坏性动作留前后全文与行级 diff，支持按历史一键恢复、
@@ -738,33 +710,7 @@ ContainerInfo：`id`、`name`、`image`、`state`、`status`、`ports`。
 ImageInfo：`id`、`tag`、`size`、`created`。
 PullImageBody：`image`（必填，≤200，如 `nginx:latest`）。
 
-### 2. Nginx 网站 `appstack/website`
-
-| 方法 | 路径 | 权限 | 说明 |
-| ---- | ---- | ---- | ---- |
-| GET | `/page?keyword=` | `appstack:website:list` | 站点分页 |
-| GET | `/nginx-status` | `appstack:website:list` | Nginx 可用性 `data: true/false` |
-| GET | `/{id}/conf` | `appstack:website:list` | 站点配置内容 |
-| POST | `/` | `appstack:website:add` | 新增 |
-| PUT | `/` | `appstack:website:edit` | 编辑（高危审计） |
-| PUT | `/{id}/status/{status}` | `appstack:website:edit` | 启停（1/0，高危审计） |
-| DELETE | `/{id}` | `appstack:website:delete` | 删除（高危审计） |
-
-WebsiteBody：
-
-| 字段 | 类型 | 校验 |
-| ---- | ---- | ---- |
-| `id` | number | 编辑时必填 |
-| `domain` | string | 必填，域名格式 |
-| `siteName` | string | 必填，≤60 |
-| `siteType` | string | 必填，`proxy` / `static` |
-| `upstream` | string | proxy 必填，`http(s)://` 开头 |
-| `staticRoot` | string | static 必填（须在文件白名单内） |
-| `sslEnabled` | number | 0/1 |
-| `certPath` / `keyPath` | string | 启用 SSL 时必填 |
-| `remark` | string | 可选 |
-
-### 3. MySQL 数据库 `appstack/database`
+### 2. MySQL 数据库 `appstack/database`
 
 | 方法 | 路径 | 权限 | 说明 |
 | ---- | ---- | ---- | ---- |

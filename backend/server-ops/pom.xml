@@ -11,17 +11,12 @@
 
   <artifactId>server-ops</artifactId>
   <name>ServerPanel :: Ops</name>
-  <description>运维工具：进程管理、systemd 服务、计划任务、防火墙</description>
+  <description>运维工具：进程管理、systemd 服务、防火墙、Nginx 站点、服务器配置</description>
 
   <dependencies>
     <dependency>
       <groupId>com.serverpanel</groupId>
       <artifactId>server-framework</artifactId>
-    </dependency>
-    <!-- cron 表达式解析（面板内调度） -->
-    <dependency>
-      <groupId>com.cronutils</groupId>
-      <artifactId>cron-utils</artifactId>
     </dependency>
     <!-- Nginx 站点配置模板 -->
     <dependency>

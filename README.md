@@ -9,8 +9,8 @@
 | 系统管理 | 用户 / 角色 / 菜单 / 字典 / 参数配置 / 操作审计 / 登录日志 |
 | 实时监控 | CPU / 内存 / 磁盘 / 网络，WebSocket 实时曲线 + 历史聚合 |
 | 文件管理 | 白名单根目录、树表浏览、上传下载、在线编辑、压缩解压、回收站 |
-| 运维工具 | 进程管理、systemd 服务、计划任务、防火墙（ufw/firewalld） |
-| 应用栈 | Docker 容器/镜像、Nginx 网站（反代/静态/HTTPS）、MySQL 建库/账号/备份恢复 |
+| 运维工具 | 进程管理、systemd 服务、防火墙（ufw/firewalld）、Nginx 站点、服务器配置 |
+| 应用栈 | Docker 容器/镜像、MySQL 建库/账号/备份恢复 |
 
 ## 目录结构
 
@@ -64,7 +64,7 @@ pnpm dev  # 或 cd apps/web-antd && pnpm dev
 - JDK 21
 - MySQL 8.x（面板库由 Flyway 自动建表，需授权一个 `panel` 账号）
 - Redis 6+
-- 可选：Nginx（网站管理）、Docker（容器管理）、`mysqldump`（数据库备份）
+- 可选：Docker（容器管理）、`mysqldump`（数据库备份）
 
 > Nginx 站点配置目录默认为 `/etc/nginx/panel.d`，需在主配置中加
 > `include /etc/nginx/panel.d/*.conf;` 并保证 `nginx -t` 可执行。
@@ -83,7 +83,7 @@ sudo ./scripts/install.sh /path/to/serverpanel.jar
 ```
 
 安装脚本会写入 `/etc/systemd/system/serverpanel.service` 并 `enable --now`。
-可用环境变量（安装前 export 即可生效）：`SERVER_PORT`、`MYSQL_HOST/PORT/DB/USER/PASSWORD`、`REDIS_HOST/PORT/PASSWORD`、`PANEL_MYSQL_ADMIN_USER/PASSWORD`（面板代管 MySQL 的管理账号）、`PANEL_FILE_ROOTS`、`PANEL_NGINX_CONF_DIR`。
+可用环境变量（安装前 export 即可生效）：`SERVER_PORT`、`MYSQL_HOST/PORT/DB/USER/PASSWORD`、`REDIS_HOST/PORT/PASSWORD`、`PANEL_MYSQL_ADMIN_USER/PASSWORD`（面板代管 MySQL 的管理账号）、`PANEL_FILE_ROOTS`。
 
 常用运维：
 
@@ -94,7 +94,7 @@ journalctl -u serverpanel -f
 
 ### 4. HTTPS 建议
 
-生产建议由外层 Nginx/Caddy 反代 `8080` 并终结 TLS；也可在面板「网站管理」中为已部署站点配置证书。
+生产建议由外层 Nginx/Caddy 反代 `8080` 并终结 TLS。
 
 ## 四、安全设计要点
 

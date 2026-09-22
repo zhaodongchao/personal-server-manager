@@ -4,7 +4,7 @@
 
 ## 1. Project Overview（项目概览）
 
-- **项目定位**：ServerPanel 个人服务器管理系统，为单机 Linux 服务器提供可视化管理能力，属于 DevOps 面板类业务。核心能力覆盖：系统用户/角色/菜单/字典等基础权限、服务器监控（CPU/内存/磁盘/进程）、文件管理、Docker 容器与镜像管理、Nginx 网站托管、MySQL 数据库管理、计划任务、防火墙规则管理。
+- **项目定位**：ServerPanel 个人服务器管理系统，为单机 Linux 服务器提供可视化管理能力，属于 DevOps 面板类业务。核心能力覆盖：系统用户/角色/菜单/字典等基础权限、服务器监控（CPU/内存/磁盘/进程）、文件管理、Docker 容器与镜像管理、MySQL 数据库管理、防火墙规则管理、Nginx 站点管理、服务器配置管理。
 - **架构模式**：前后端分离架构。
   - 后端：**单体多模块 Maven 工程**（`backend/`），按业务域拆分为独立 Maven module，由 `server-boot` 统一装配启动，不属于微服务架构。
   - 分层：严格遵循 `Controller → Service → Mapper/外部能力 → Database` 单向分层调用链；框架能力（认证、异常、MyBatis-Plus、Redis、MongoDB 基类）沉淀于 `server-framework`；通用工具与公共模型沉淀于 `server-common`。
@@ -109,8 +109,8 @@ backend
 | ③ 系统层 | `backend/server-system/src/main/java/com/serverpanel/system/` | 系统管理：用户/角色/菜单/字典/配置/登录鉴权/审计日志/用户偏好 |
 | ④ 业务层 | `backend/server-monitor/src/main/java/com/serverpanel/monitor/` | 服务器监控：指标采集（OSHI）、监控接口、WebSocket 实时推送 |
 | ④ 业务层 | `backend/server-file/src/main/java/com/serverpanel/file/` | 文件管理：文件列表/目录操作、回收站、根目录白名单安全校验（`security/PathGuard`） |
-| ④ 业务层 | `backend/server-ops/src/main/java/com/serverpanel/ops/` | 运维管理：进程、服务、计划任务（cron）、防火墙 |
-| ④ 业务层 | `backend/server-appstack/src/main/java/com/serverpanel/appstack/` | 应用栈管理：Docker 容器/镜像、Nginx 网站、MySQL 数据库 |
+| ④ 业务层 | `backend/server-ops/src/main/java/com/serverpanel/ops/` | 运维管理：进程、服务、防火墙、Nginx、服务器配置 |
+| ④ 业务层 | `backend/server-appstack/src/main/java/com/serverpanel/appstack/` | 应用栈管理：Docker 容器/镜像、MySQL 数据库 |
 | ⑤ 启动层 | `backend/server-boot/src/main/java/com/serverpanel/` | 启动装配模块：汇总所有业务模块、Flyway 迁移、配置与打包（产物名 `serverpanel`，含 `resources/static` 前端资源与 `db/migration` 迁移脚本） |
 
 分层职责约定：`controller` 仅请求接入与参数校验；`service` 承载业务逻辑与事务；`mapper` 仅数据库交互；`dto` 承载入参（`*Body`）与出参（`*VO`）；`entity` 映射数据表；`config` 存放配置类；特殊子包如 `security`（权限）、`ws`（WebSocket）、`audit`（审计）按需拆分。
@@ -202,9 +202,9 @@ pnpm check:type
 
 ## 6. 宿主执行通道（psm-hostagent）
 
-ServerPanel 跑在容器里，但「服务管理 / 计划管理 / 防火墙管理」三个模块操作的是**宿主机**，
+ServerPanel 跑在容器里，但「服务管理 / 防火墙管理」两个模块操作的是**宿主机**，
 而面板容器（eclipse-temurin:21-jre）内没有 `systemctl` / `journalctl` / `ufw` / `df`——
-这三块功能在容器里执行是空转。因此引入宿主执行通道：
+这两块功能在容器里执行是空转。因此引入宿主执行通道：
 
 - **宿主侧**：`ops/hostagent/hostagent.py`，单文件 Python systemd 服务（`psm-hostagent`），
   监听 AF_UNIX socket `/run/psm-hostagent/agent.sock`（不暴露 TCP），共享密钥认证，

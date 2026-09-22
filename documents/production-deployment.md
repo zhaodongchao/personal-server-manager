@@ -130,8 +130,6 @@ export PANEL_MYSQL_ADMIN_USER=root
 export PANEL_MYSQL_ADMIN_PASSWORD='RootPassword'
 # 文件管理根目录白名单（逗号分隔）
 export PANEL_FILE_ROOTS='/www,/srv,/var/www'
-# Nginx 站点配置目录
-export PANEL_NGINX_CONF_DIR='/etc/nginx/panel.d'
 
 cd /path/to/serverpanel
 sudo ./scripts/install.sh /opt/serverpanel/serverpanel.jar
@@ -165,7 +163,6 @@ journalctl -u serverpanel -f          # 跟踪启动日志
 | `PANEL_MYSQL_ADMIN_USER/PASSWORD` | `root` / 空 | 管理账号（建库/备份/恢复） |
 | `PANEL_FILE_ROOTS` | `/www,/srv,/var/www` | 文件管理根目录白名单 |
 | `PANEL_TRASH_DIR` | `/var/serverpanel/trash` | 文件回收站目录 |
-| `PANEL_NGINX_CONF_DIR` | `/etc/nginx/panel.d` | 面板托管 Nginx 站点配置目录 |
 | `PANEL_DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker Engine 连接 |
 | `HOST_SYSROOT` | 空 | 容器部署时宿主机根挂载路径（见下文 Docker 部署说明） |
 | `SERVER_ADDRESS` | `0.0.0.0` | 面板监听地址（生产建议 `127.0.0.1`） |
@@ -241,21 +238,7 @@ sudo apt-get install -y certbot python3-certbot-nginx
 sudo certbot --nginx -d panel.example.com
 ```
 
-## 七、Nginx 网站管理（面板托管站点）
-
-如果使用面板的「网站管理」功能：
-
-1. 面板生成站点配置到 `/etc/nginx/panel.d/`（默认，可用 `PANEL_NGINX_CONF_DIR` 调整）。
-2. 在主配置中引入该目录：
-
-```bash
-# /etc/nginx/nginx.conf 的 http {} 块内追加
-include /etc/nginx/panel.d/*.conf;
-```
-
-3. 确认 `nginx -t` 可执行且权限允许面板重载（面板以 root 运行 systemd 服务，默认满足）。
-
-## 八、日常运维
+## 七、日常运维
 
 ### 1. 服务管理
 
@@ -271,9 +254,6 @@ sudo systemctl restart serverpanel
 ```bash
 # 业务库全量备份（面板数据）
 mysqldump -u root -p server_panel > /var/backups/server_panel_$(date +%F).sql
-
-# 备份 jar 与站点配置
-cp -r /etc/nginx/panel.d /var/backups/panel.d.bak
 ```
 
 建议配合 crontab 每日备份并异地存放。
@@ -298,7 +278,7 @@ sudo systemctl daemon-reload
 sudo rm -rf /opt/serverpanel            # 按需删除（含数据）
 ```
 
-## 九、常见问题排查
+## 八、常见问题排查
 
 | 现象 | 排查 |
 | ---- | ---- |
@@ -308,11 +288,10 @@ sudo rm -rf /opt/serverpanel            # 按需删除（含数据）
 | 登录提示密码错误 | 确认默认账号 admin / Admin@123；多次失败会触发 15 分钟锁定 |
 | 监控曲线不更新 | 检查 WebSocket：确认反代配置了 `Upgrade/Connection` 头且 `/ws` 路径放行 |
 | 文件管理报"源路径不存在" | 确认目标目录在 `PANEL_FILE_ROOTS` 白名单内且物理存在 |
-| 网站管理 `nginx -t` 失败 | 检查 `PANEL_NGINX_CONF_DIR` 是否已被主配置 include，证书文件路径是否正确 |
 
-## 十一、宿主执行通道（psm-hostagent）
+## 九、宿主执行通道（psm-hostagent）
 
-面板容器里没有 systemctl / journalctl / ufw 等命令，服务管理、计划管理、防火墙三个模块
+面板容器里没有 systemctl / journalctl / ufw 等命令，服务管理、防火墙两个模块
 需要在**宿主机**上执行系统命令。为此在宿主机上安装一个极小的 systemd 服务 `psm-hostagent`：
 
 - 单文件 Python 3.11，监听 **AF_UNIX** socket `/run/psm-hostagent/agent.sock`（0660，不暴露 TCP）；
@@ -333,7 +312,7 @@ sudo ss -xlp | grep agent.sock
 安装完成后回到面板点「重新探测」即可，无需重启面板容器。
 升级面板后若后端协议版本变化，需重新执行安装脚本（脚本会覆盖并重启服务）。
 
-## 十二、Nginx 管理模块（运维工具）
+## 十、Nginx 管理模块（运维工具）
 
 面板「运维工具 → Nginx 管理」是配置生成型管理器，依赖宿主执行通道（`psm-hostagent` 第十一节）：
 
@@ -343,7 +322,7 @@ sudo ss -xlp | grep agent.sock
 - ACME 证书默认申请到宿主机的 certbot 配置目录（容器挂载映射），续期由每日 03:30 调度自动执行；
 - 所有写操作均生成可回滚快照，删站/删证书/回滚需二次确认关键字。
 
-## 十三、服务器配置管理模块（运维工具）
+## 十一、服务器配置管理模块（运维工具）
 
 面板「运维工具 → 服务器配置」在线管理四类系统配置（内核参数 / 资源限制 / SSH / 时间同步）。
 **不修改发行版主配置**，只写发行版之外的 drop-in 片段：
@@ -370,7 +349,7 @@ sudo ss -xlp | grep agent.sock
 - L3 类别（SSH）的生效 / 停止托管 / 按历史恢复都要求键入关键字 `APPLY sshd`，
   防止改错 SSH 参数把自己锁在门外。
 
-## 十、上线前安全检查清单
+## 十二、上线前安全检查清单
 
 - [ ] 已修改默认密码 `admin / Admin@123`
 - [ ] MySQL 业务账号与 Redis 使用强密码

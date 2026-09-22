@@ -11,17 +11,12 @@
 
   <artifactId>server-appstack</artifactId>
   <name>ServerPanel :: AppStack</name>
-  <description>应用栈管理：Docker 容器/镜像、Nginx 网站、MySQL 数据库</description>
+  <description>应用栈管理：Docker 容器/镜像、MySQL 数据库</description>
 
   <dependencies>
     <dependency>
       <groupId>com.serverpanel</groupId>
       <artifactId>server-framework</artifactId>
-    </dependency>
-    <!-- 复用文件模块的根目录白名单校验（static_root 必须位于白名单内） -->
-    <dependency>
-      <groupId>com.serverpanel</groupId>
-      <artifactId>server-file</artifactId>
     </dependency>
     <!-- Docker Engine API（unix socket） -->
     <dependency>
@@ -31,11 +26,6 @@
     <dependency>
       <groupId>com.github.docker-java</groupId>
       <artifactId>docker-java-transport-httpclient5</artifactId>
-    </dependency>
-    <!-- Nginx 站点配置模板 -->
-    <dependency>
-      <groupId>org.freemarker</groupId>
-      <artifactId>freemarker</artifactId>
     </dependency>
   </dependencies>
 </project>

@@ -44,7 +44,6 @@ Environment="REDIS_PASSWORD=${REDIS_PASSWORD:-}"
 Environment="PANEL_MYSQL_ADMIN_USER=${PANEL_MYSQL_ADMIN_USER:-root}"
 Environment="PANEL_MYSQL_ADMIN_PASSWORD=${PANEL_MYSQL_ADMIN_PASSWORD:-}"
 Environment="PANEL_FILE_ROOTS=${PANEL_FILE_ROOTS:-/www,/srv,/var/www}"
-Environment="PANEL_NGINX_CONF_DIR=${PANEL_NGINX_CONF_DIR:-/etc/nginx/panel.d}"
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=1048576
