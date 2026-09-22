@@ -41,17 +41,26 @@ const methodOptions = computed(() =>
   methods.value.map((m) => ({ label: m.label, value: m.value })),
 );
 
-/** 切换方式时按服务端默认值重置参数，避免上一方式的参数残留 */
-watch(method, (val) => {
+/**
+ * 按服务端下发的默认值填充参数。
+ *
+ * 必须在「方式清单加载完成后」主动调一次：watch 只在 method <b>变化</b>时触发，
+ * 而首屏 method 的初值恰好等于清单里的第一个方式（同为 XOR），watch 不会触发，
+ * 于是必填的密钥是空的，用户直接点「混淆」会报 7006「XOR 需要填写密钥」。
+ */
+function applyDefaults() {
   const next: Record<string, any> = {};
-  const found = methods.value.find((m) => m.value === val);
+  const found = methods.value.find((m) => m.value === method.value);
   for (const f of found?.fields ?? []) {
     if (f.def !== null && f.def !== undefined) {
       next[f.name] = f.def;
     }
   }
   params.value = next;
-});
+}
+
+/** 切换方式时按服务端默认值重置参数，避免上一方式的参数残留 */
+watch(method, () => applyDefaults());
 
 onMounted(async () => {
   try {
@@ -60,6 +69,7 @@ onMounted(async () => {
     if (methods.value.length > 0) {
       method.value = methods.value[0]!.value;
     }
+    applyDefaults();
   } catch {
     message.error('混淆方式加载失败，请刷新页面重试');
   }
