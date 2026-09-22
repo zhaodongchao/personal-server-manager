@@ -6,6 +6,7 @@ export * from './monitor';
 export * from './nginx';
 export * from './ops';
 export * from './preference';
+export * from './server-config';
 export * from './system/config';
 export * from './system/dict';
 export * from './system/log';
