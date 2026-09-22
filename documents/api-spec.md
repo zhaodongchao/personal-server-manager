@@ -780,7 +780,7 @@ SERVICE 复用 `service.action`。
 | GET | `/stats` | `appstack:job:list` | 顶部统计（含调度器开关、宿主通道可用性） |
 | GET | `/handlers` | `appstack:job:list` | 4 类处理器的表单 schema（前端据此**动态渲染**，新增处理器不改前端） |
 | GET | `/commands` | `appstack:job:list` | 命令白名单 + 宿主是否真的装了该命令（`available` / `path`） |
-| GET | `/options` | `appstack:job:list` | 下拉源：路由策略 / 阻塞策略 / 内置任务清单 / 各项上限 |
+| GET | `/options` | `appstack:job:list` | 下拉源：路由策略 / 阻塞策略 / 内置任务清单（**含各自的专用字段定义**）/ 各项上限 |
 | POST | `/cron/validate` | `appstack:job:list` | 校验 cron（合法性 + 相邻间隔下限），返回 `valid` / `message` |
 | GET | `/{id}` | `appstack:job:list` | 任务详情 |
 | GET | `/{id}/next-times` | `appstack:job:list` | 未来若干次触发时间 |
@@ -811,7 +811,28 @@ JobBody：`jobName`（必填）、`jobDesc`、`handler`（SHELL / HTTP / SERVICE
 | `SHELL` | `command`、`args[]`、`env{}` | 命令名必须在白名单内且不含路径分隔符；**只接受 argv 数组，绝不拼 shell 字符串**；非白名单返回 **6036** |
 | `HTTP` | `method`、`url`、`headers{}`、`body`、`expectStatus` | URL 仅 `http/https`，黑名单元数据地址（`169.254.169.254` 等），不跟随重定向，响应上限 1MB |
 | `SERVICE` | `unit`、`action` | action 必须落在宿主代理允许的动作集内；受保护单元 + 破坏性动作需 confirm `APPLY <unit>`（**6039**） |
-| `INTERNAL` | `task`、`params{}` | `task` 取自 `/options` 的 `internalTasks`（内置 SPI 注册，未知取值返回 **6033**） |
+| `INTERNAL` | `task`、`params{}` | `task` 取自 `/options` 的 `internalTasks`（内置 SPI 注册，未知取值返回 **6033**）；参数按所选任务声明的字段渲染，见下方 |
+
+**内置任务的参数入口（task 级 schema）**：`/options` 的 `internalTasks[]` 除 `code` / `label` /
+`description` 外，还下发该任务自己声明的表单字段与是否接受自由参数：
+
+| 字段 | 含义 |
+| ---- | ---- |
+| `fields[]` | 任务声明的专用字段（结构与 `/handlers` 的字段相同：`name` / `label` / `type` / `required` / `options` / `help`）；非空时界面按字段渲染结构化表单 |
+| `freeFormParams` | 是否接受自由 JSON 参数；`false` 表示该任务无参数，界面不渲染任何参数输入框（默认 `true`） |
+
+于是参数的填写有三档，**优先级自上而下**：
+
+1. `fields` 非空 —— 按字段表单填，值以 `task` + `params` 两层对象提交（同既有形态）；
+2. `fields` 为空且 `freeFormParams` 为 `false` —— 该任务无参数，界面不显示参数区；
+3. `fields` 为空且 `freeFormParams` 为 `true`（默认）—— 回落到自由 JSON 文本域。
+
+声明了字段的任务**不再提供自由 JSON 入口** —— 两者并存会让同名字段出现两个入口，保存时无法判断该信谁。
+字段名不能是 `task` / `params`（与处理器固有字段冲突，前端忽略）。
+
+后端新增一个内置任务只需在任意模块实现 `InternalTask`（`@Component`），字段经 SPI 一并注册，
+**前端无需改动**；但**新增内置任务必须重启后端**（bean 集合在启动时固定），改任务的 cron
+与参数则是热更新。
 
 阻塞策略与确认关键字：
 
