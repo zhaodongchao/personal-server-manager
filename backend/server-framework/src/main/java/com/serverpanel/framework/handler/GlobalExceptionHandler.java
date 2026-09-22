@@ -1,6 +1,7 @@
 package com.serverpanel.framework.handler;
 
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.BindException;
@@ -15,14 +16,17 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
+import com.serverpanel.common.audit.AccessDeniedEvent;
 import com.serverpanel.common.core.R;
 import com.serverpanel.common.exception.ErrorCode;
 import com.serverpanel.common.exception.ServiceException;
+import com.serverpanel.framework.security.LoginHelper;
 
 import cn.dev33.satoken.exception.NotLoginException;
 import cn.dev33.satoken.exception.NotPermissionException;
 import cn.dev33.satoken.exception.NotRoleException;
 import cn.dev33.satoken.exception.NotSafeException;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -30,7 +34,10 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 @RestControllerAdvice
+@RequiredArgsConstructor
 public class GlobalExceptionHandler {
+
+    private final ApplicationEventPublisher eventPublisher;
 
     /** 业务异常 */
     @ExceptionHandler(ServiceException.class)
@@ -44,16 +51,30 @@ public class GlobalExceptionHandler {
         return R.fail(ErrorCode.UNAUTHORIZED);
     }
 
-    /** 无权限 */
+    /**
+     * 无权限（越权尝试）。
+     *
+     * <p>注意执行顺序：@SaCheckPermission 由 SaInterceptor 在 HandlerInterceptor#preHandle
+     * 阶段校验，早于 Controller 方法上的 @Audit 切面 —— 被拒请求根本不会进入切面，
+     * 所以越权尝试只能在这里单独留痕。把 @Audit 前移是错的，那会把「业务方法从未执行」
+     * 记成「已执行」。这里只发布事件，落库交给 server-system（framework 不反向依赖 system）。
+     */
     @ExceptionHandler({NotPermissionException.class, NotRoleException.class})
-    public R<Void> handleNoPerm(Exception e) {
+    public R<Void> handleNoPerm(Exception e, HttpServletRequest request) {
+        publishAccessDenied(e, request);
         return R.fail(ErrorCode.FORBIDDEN);
     }
 
-    /** 高危操作未完成二级认证 */
+    /**
+     * 高危操作未完成二级认证（@Audit(safe = true) 的 step-up 闸门）。
+     *
+     * <p>刻意用独立业务码 1010，而不是复用 403：前端 request.ts 捕获 1010 会弹出密码框
+     * 完成二级认证后自动重放原请求；若复用 403，就与「真的没有权限」无法区分，
+     * 前端只能对所有 403 弹密码框，语义是错的。
+     */
     @ExceptionHandler(NotSafeException.class)
     public R<Void> handleNotSafe(NotSafeException e) {
-        return R.fail(ErrorCode.FORBIDDEN.getCode(), "敏感操作，请先完成二级认证");
+        return R.fail(ErrorCode.AUTH_SAFE_REQUIRED);
     }
 
     /** 参数校验失败：@Valid 请求体 */
@@ -110,5 +131,41 @@ public class GlobalExceptionHandler {
     public R<Void> handleUnknown(Exception e, HttpServletRequest request) {
         log.error("未处理异常 [{}] {}", request.getRequestURI(), e.getMessage(), e);
         return R.fail(ErrorCode.ERROR);
+    }
+
+    /**
+     * 发布越权事件（不携带请求体：越权请求的入参不应落库）。
+     *
+     * <p>任何异常都不得改变鉴权结果 —— 审计是旁路，403 照常返回。
+     */
+    private void publishAccessDenied(Exception e, HttpServletRequest request) {
+        try {
+            String deniedBy;
+            if (e instanceof NotPermissionException npe) {
+                deniedBy = "缺少权限：" + npe.getPermission();
+            } else {
+                deniedBy = "缺少角色：" + ((NotRoleException) e).getRole();
+            }
+            String operator = null;
+            try {
+                operator = LoginHelper.getUsername();
+            } catch (Exception ignored) {
+                // 越权请求理论上已登录（未登录会先被 checkLogin 拦成 401），此处仅兜底
+            }
+            eventPublisher.publishEvent(new AccessDeniedEvent(operator,
+                request.getRequestURI(), request.getMethod(), deniedBy,
+                clientIp(request), request.getHeader("User-Agent")));
+        } catch (Exception ignored) {
+            // 留痕失败不影响 403 的返回
+        }
+    }
+
+    /** 提取客户端 IP（优先 X-Forwarded-For，与登录日志口径一致） */
+    private String clientIp(HttpServletRequest request) {
+        String xff = request.getHeader("X-Forwarded-For");
+        if (xff != null && !xff.isBlank()) {
+            return xff.split(",")[0].trim();
+        }
+        return request.getRemoteAddr();
     }
 }

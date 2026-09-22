@@ -95,6 +95,14 @@ serverpanel:
   login:
     max-fail: 5
     lock-minutes: 15
+  # 审计与高危操作（二级认证）
+  # record-denied：是否把被鉴权层拒绝的请求（module=access）落审计；量大或不需要该视角时可关。
+  # enforce-safe：@Audit(safe = true) 的二级认证闸门总开关，置 false 可一键关停而不发版
+  #               —— 与 job.scheduler.enabled 同类，属可配置的故障处置手段。
+  audit:
+    record-denied: ${PANEL_AUDIT_RECORD_DENIED:true}
+    enforce-safe: ${PANEL_AUDIT_ENFORCE_SAFE:true}
+    safe-timeout-seconds: ${PANEL_AUDIT_SAFE_TIMEOUT:300}
   # 监控采集间隔（秒）；host-sysroot：容器部署时宿主机根挂载路径（如 -v /:/host 后设 /host），
   # 用于读取宿主机挂载表与块设备（磁盘/LVM/文件系统），裸机部署留空（未配置时自动探测 /host、/hostfs、/mnt/host）
   monitor:

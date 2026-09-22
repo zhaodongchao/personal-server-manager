@@ -46,8 +46,14 @@ public class SysAuditLog implements Serializable {
     /** 入参 JSON（截断 2KB） */
     private String params;
 
-    /** 响应业务码 */
+    /** 结果类别码：0 成功 / 403 越权或无权限 / 500 执行业务方法时抛异常 */
     private Integer resultCode;
+
+    /** 业务错误码（如 6039、1010）；与 resultCode 分工，成功为 null */
+    private Integer bizCode;
+
+    /** 是否高危操作（来自 @Audit.risky），1 是 0 否 */
+    private Integer risky;
 
     private String errorMsg;
 

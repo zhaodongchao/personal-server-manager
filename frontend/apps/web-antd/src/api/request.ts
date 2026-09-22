@@ -16,6 +16,7 @@ import { useAccessStore } from '@vben/stores';
 import { message } from 'ant-design-vue';
 
 import { useAuthStore } from '#/store';
+import { ensureSafe } from '#/utils/safe-auth';
 
 import { refreshTokenApi } from './core';
 
@@ -115,11 +116,36 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
     },
   });
 
+  // 业务码 1010：@Audit(safe = true) 的高危操作需要二级认证（step-up）。
+  // 服务端在鉴权通过之后、业务逻辑之前用 StpUtil.checkSafe() 拦截并返回 1010。
+  // 这里弹出密码框完成认证，然后自动重放原请求一次 —— 否则用户得手动再点一次，
+  // 而且两次提交的入参未必一致。
+  client.addResponseInterceptor({
+    rejected: async (error) => {
+      const config = error?.config;
+      const businessCode = error?.response?.data?.code;
+      if (Number(businessCode) !== 1010 || !config || config.__safeRetry) {
+        throw error;
+      }
+      const passed = await ensureSafe(client);
+      if (!passed) {
+        throw error;
+      }
+      // 标记后重放：避免认证窗口过期时无限弹框
+      config.__safeRetry = true;
+      return client.instance(config);
+    },
+  });
+
   // 通用的错误处理,如果没有进入上面的错误处理逻辑，就会进入这里
   client.addResponseInterceptor(
     errorMessageResponseInterceptor((msg: string, error) => {
       // 业务码 401 已由上面的拦截器触发重新登录，不再重复弹出错误提示
       if (Number(error?.response?.data?.code) === 401) {
+        return;
+      }
+      // 业务码 1010 已由上面的拦截器弹出二级认证框，这里不再叠一层提示
+      if (Number(error?.response?.data?.code) === 1010) {
         return;
       }
       // 这里可以根据业务进行定制,你可以拿到 error 内的信息进行定制化处理，根据不同的 code 做不同的提示，而不是直接使用 message.error 提示 msg

@@ -176,7 +176,9 @@ public class FileController {
         return R.ok();
     }
 
-    @Audit(module = "file", action = "recycle:empty", risky = true)
+    // safe = true：清空回收站不可逆，作为二级认证（step-up）的试点端点。
+    // 其余高危端点的开通清单待确认后逐个加 safe = true，一行即可。
+    @Audit(module = "file", action = "recycle:empty", risky = true, safe = true)
     @SaCheckPermission("file:delete")
     @PostMapping("/recycle/empty")
     public R<Void> empty() {

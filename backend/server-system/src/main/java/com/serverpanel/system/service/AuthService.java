@@ -47,6 +47,10 @@ public class AuthService {
     @Value("${serverpanel.login.lock-minutes:15}")
     private int lockMinutes;
 
+    /** 二级认证安全窗口（秒）；下限 30 秒在 openSafe 内钳制 */
+    @Value("${serverpanel.audit.safe-timeout-seconds:300}")
+    private long safeTimeoutSeconds;
+
     /** 登录：防爆破（按 用户名+IP 计数与锁定） + 审计登录日志 */
     public String login(LoginBody body, HttpServletRequest request) {
         String username = body.getUsername();
@@ -180,6 +184,55 @@ public class AuthService {
         userMapper.updateById(user);
         // 改密后全端下线
         StpUtil.logout(userId);
+    }
+
+    /**
+     * 二级认证（step-up）：校验当前登录用户的密码，通过后开启安全窗口。
+     *
+     * <p>窗口内 {@code StpUtil.checkSafe()} 不再抛 NotSafeException，
+     * {@code @Audit(safe = true)} 的高危接口才允许执行。窗口按会话（token）维度存储。
+     *
+     * <p>失败计数复用登录防爆破的 Redis 键（用户名+IP），使本接口不能成为
+     * 持 token 者爆破口令的旁路 —— 只有密码校验通过才放行。
+     *
+     * @param password 当前登录用户的登录密码
+     * @param request  仅用于取客户端 IP（与登录防爆破同口径）
+     * @return 本次安全窗口的有效秒数
+     */
+    public long openSafe(String password, HttpServletRequest request) {
+        long userId = LoginHelper.getUserId();
+        SysUser user = userMapper.selectById(userId);
+        if (user == null) {
+            throw new ServiceException(ErrorCode.AUTH_USER_NOT_FOUND);
+        }
+        String ip = clientIp(request);
+        String failKey = CacheConstants.LOGIN_FAIL_PREFIX + user.getUsername() + ":" + ip;
+        String lockKey = CacheConstants.LOGIN_LOCK_PREFIX + user.getUsername() + ":" + ip;
+
+        if (Boolean.TRUE.equals(redisTemplate.hasKey(lockKey))) {
+            long ttl = redisTemplate.getExpire(lockKey);
+            throw new ServiceException(ErrorCode.AUTH_LOCKED,
+                "账号已锁定，请 " + Math.max(ttl / 60, 1) + " 分钟后重试");
+        }
+
+        if (password == null || !passwordEncoder.matches(password, user.getPassword())) {
+            recordLoginLog(user.getUsername(), ip, 0, "二级认证密码错误", request);
+            Long fails = redisTemplate.opsForValue().increment(failKey);
+            redisTemplate.expire(failKey, Duration.ofMinutes(Math.max(lockMinutes, 1)));
+            if (fails != null && fails >= maxFail) {
+                redisTemplate.opsForValue().set(lockKey, "1",
+                    Duration.ofMinutes(Math.max(lockMinutes, 1)));
+                redisTemplate.delete(failKey);
+                log.warn("Safe-auth locked: {} from {}", user.getUsername(), ip);
+            }
+            throw new ServiceException(ErrorCode.AUTH_LOGIN_FAILED, "密码不正确，二级认证未通过");
+        }
+
+        redisTemplate.delete(failKey);
+        long timeout = Math.max(safeTimeoutSeconds, 30);
+        StpUtil.openSafe(timeout);
+        recordLoginLog(user.getUsername(), ip, 1, "二级认证通过", request);
+        return timeout;
     }
 
     private void recordLoginLog(String username, String ip, int status, String message,

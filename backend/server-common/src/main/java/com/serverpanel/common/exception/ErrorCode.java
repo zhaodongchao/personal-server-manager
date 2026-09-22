@@ -30,6 +30,7 @@ public enum ErrorCode {
     AUTH_USER_DISABLED(1003, "账号已停用"),
     AUTH_OLD_PASSWORD_ERROR(1004, "原密码不正确"),
     AUTH_USER_NOT_FOUND(1005, "用户不存在"),
+    AUTH_SAFE_REQUIRED(1010, "敏感操作，请先完成二级认证"),
 
     // ===== 系统管理 2xxx =====
     USER_EXISTS(2001, "用户名已存在"),
