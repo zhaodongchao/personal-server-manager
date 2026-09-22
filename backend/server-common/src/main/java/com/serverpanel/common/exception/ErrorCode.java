@@ -99,7 +99,19 @@ public enum ErrorCode {
     SERVER_CONFIG_BACKUP_FAILED(6023, "配置备份失败，已中止生效"),
     SERVER_CONFIG_SELF_LOCKOUT_RISK(6024, "该变更可能导致自身失联，需二次确认"),
     SERVER_CONFIG_ITEM_INVALID(6025, "配置项不合法"),
-    SERVER_CONFIG_BUSY(6026, "该配置类别正在生效中，请稍后重试");
+    SERVER_CONFIG_BUSY(6026, "该配置类别正在生效中，请稍后重试"),
+
+    // ===== 定时任务（应用栈）6030+ =====
+    JOB_NOT_FOUND(6030, "定时任务不存在"),
+    JOB_CRON_INVALID(6031, "cron 表达式非法或触发间隔过短（最小 10 秒）"),
+    JOB_RUNNING(6032, "任务正在执行中或执行器仍被引用"),
+    JOB_HANDLER_INVALID(6033, "任务处理器参数不合法"),
+    JOB_EXECUTOR_UNAVAILABLE(6034, "执行器不存在或不可用"),
+    JOB_EXECUTOR_BUILTIN_PROTECTED(6035, "内置执行器不允许删除或停用"),
+    JOB_SHELL_NOT_ALLOWED(6036, "命令不在白名单内，不允许执行"),
+    JOB_LOG_NOT_FOUND(6037, "任务日志不存在"),
+    JOB_NAME_EXISTS(6038, "任务名或执行器 AppName 已存在"),
+    JOB_CONFIRM_REQUIRED(6039, "该操作存在风险，需确认关键字");
 
     private final int code;
     private final String message;

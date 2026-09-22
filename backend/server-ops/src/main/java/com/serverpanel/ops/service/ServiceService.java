@@ -24,7 +24,7 @@ import com.serverpanel.common.exception.ErrorCode;
 import com.serverpanel.common.exception.ServiceException;
 import com.serverpanel.framework.command.HostCapability;
 import com.serverpanel.framework.command.HostResult;
-import com.serverpanel.ops.constant.ProtectedUnits;
+import com.serverpanel.common.constant.ProtectedUnits;
 import com.serverpanel.ops.dto.ServiceActionBody;
 import com.serverpanel.ops.dto.ServiceActionResultVO;
 import com.serverpanel.ops.dto.ServiceBatchBody;

@@ -104,6 +104,23 @@ serverpanel:
   command:
     timeout-seconds: 30
     max-output-bytes: 2097152
+  # 定时任务（应用栈 → 定时任务管理 / 定时任务日志）
+  # scheduler.enabled=false 可一键停止全部定时任务，而**不影响面板其它功能与既有 @Scheduled**
+  # —— 这是本模块不需要改代码、不需要回滚版本的故障处置手段。
+  job:
+    scheduler:
+      enabled: ${PANEL_JOB_ENABLED:true}
+      # 调度池只做唤醒与派发，真实执行在独立的虚拟线程池（二者必须分离）
+      pool-size: 4
+    log:
+      retention-days: ${PANEL_JOB_LOG_RETENTION_DAYS:30}
+      max-output-bytes: 65536
+    limits:
+      # 最小触发间隔（秒）：防秒级任务把宿主与数据库一起打爆
+      min-interval-seconds: 10
+      # 与宿主代理 MAX_TIMEOUT=900 对齐
+      max-timeout-seconds: 900
+      max-retry-count: 3
   # 宿主执行通道：容器内没有 systemctl/journalctl/ufw，系统管理类操作统一经
   # 宿主机 psm-hostagent 代理执行。代理只监听 AF_UNIX 套接字、不监听任何 TCP 端口；
   # 密钥文件 0400 只读挂载进容器。详见 documents/api-spec.md 第六节。
