@@ -47,7 +47,7 @@
 | 5xxx | 运维 | `5001` 命令不在白名单、`5002` 超时、`5003` 进程不存在、`5004` 服务不可管理、`5007` 无可用防火墙、`5008` 规则不存在、`5009` 宿主通道不可用、`5010` 宿主通道版本不匹配（已降级只读）、`5011` 服务操作被保护清单拦截、`5014` 防火墙规则编号已变化、`5015` 该操作会切断 SSH/面板访问（需二次确认）、`5016` 目标规则由外部程序托管（禁止面板删除）、`5017` 防火墙变更不可回滚 |
 | 6xxx | 应用栈 | `6001` Docker 不可用、`6002` 资源不存在、`6004` Nginx 不可用、`6005` 配置校验失败、`6006` MySQL 管理连接不可用、`6007` 标识符非法、`6008` 库已存在、`6009` 库不存在 |
 | 6xxx | Nginx 管理 | `6010` 实例不存在、`6011` 危险操作需二次确认（confirm 关键字）、`6012` ACME 模式不支持、`6013` DNS-01 仅支持通配符、`6014` 证书不存在或状态非法、`6015` 配置渲染/校验失败 |
-| 6xxx | 服务器配置 | `6020` 配置类别不存在、`6021` 预演校验未通过、`6022` 生效失败（已自动回滚）、`6023` 备份失败、`6024` 高风险变更需键入关键字（防自锁护栏）、`6025` 配置项取值非法或违反安全规则、`6026` 该类别正在生效中（并发互斥） |
+| 6xxx | 服务器配置 | `6020` 配置类别不存在、`6021` 预演校验未通过、`6022` 生效失败（已自动回滚）、`6023` 备份失败、`6024` 高风险变更需键入关键字（防自锁护栏）、`6025` 配置项取值非法或违反安全规则、| 6xxx | 定时任务 | `6030` 任务不存在、`6031` cron 非法或间隔过短（最小 10 秒）、`6032` 任务执行中或执行器仍被引用、`6033` 处理器参数不合法、`6034` 执行器不存在或不可用、`6035` 内置执行器受保护（不可删除 / 停用）、`6036` 命令不在白名单、`6037` 日志不存在、`6038` 任务名或执行器 AppName 已存在、`6039` 需确认关键字、`6040` 任务未被执行（被阻塞策略或前置检查拦下） |
 
 ### 4. 分页结构与参数
 
@@ -730,6 +730,85 @@ DatabaseBody：`dbName`（必填，≤32，仅 `[a-zA-Z0-9_]`）、`charset`（�
 ```
 
 RestoreBody：`backupFile`（必填，仅允许 `[a-zA-Z0-9_.-].sql`，防路径穿越）。
+
+### 3. 定时任务 `appstack/job`
+
+参考 xxl-job 的「调度中心 / 执行器」分层与「调度日志双段」模型，但**借形不借体**：
+不做注册中心与心跳，不做在线编码（GLUE）。宿主侧零新增 op —— SHELL 复用 `host.exec`，
+SERVICE 复用 `service.action`。
+
+| 方法 | 路径 | 权限 | 说明 |
+| ---- | ---- | ---- | ---- |
+| GET | `/page?keyword=&handler=&status=` | `appstack:job:list` | 任务分页 |
+| GET | `/stats` | `appstack:job:list` | 顶部统计（含调度器开关、宿主通道可用性） |
+| GET | `/handlers` | `appstack:job:list` | 4 类处理器的表单 schema（前端据此**动态渲染**，新增处理器不改前端） |
+| GET | `/commands` | `appstack:job:list` | 命令白名单 + 宿主是否真的装了该命令（`available` / `path`） |
+| GET | `/options` | `appstack:job:list` | 下拉源：路由策略 / 阻塞策略 / 内置任务清单 / 各项上限 |
+| POST | `/cron/validate` | `appstack:job:list` | 校验 cron（合法性 + 相邻间隔下限），返回 `valid` / `message` |
+| GET | `/{id}` | `appstack:job:list` | 任务详情 |
+| GET | `/{id}/next-times` | `appstack:job:list` | 未来若干次触发时间 |
+| POST | `/` | `appstack:job:save` | 新建（高危审计） |
+| PUT | `/{id}` | `appstack:job:save` | 编辑（高危审计） |
+| DELETE | `/{id}` | `appstack:job:delete` | 删除（需 confirm `DELETE JOB <name>`；**日志保留**，任务名已快照） |
+| POST | `/{id}/copy` | `appstack:job:save` | 复制为新任务（名字自动去重加后缀） |
+| POST | `/{id}/enable` | `appstack:job:toggle` | 启用 |
+| POST | `/{id}/disable` | `appstack:job:toggle` | 停用 |
+| POST | `/{id}/run` | `appstack:job:run` | 立即执行；被丢弃时返回 **6040** 与真实原因 |
+| POST | `/{id}/stop` | `appstack:job:stop` | 停止（需 confirm `STOP JOB <name>`） |
+| GET | `/executor/list` | `appstack:job:list` | 执行器列表 |
+| POST | `/executor` | `appstack:job:executor` | 新建外部执行器 |
+| PUT | `/executor/{id}` | `appstack:job:executor` | 编辑执行器 |
+| DELETE | `/executor/{id}` | `appstack:job:executor` | 删除执行器（需 confirm `DELETE EXECUTOR <appName>`；内置执行器返回 6035） |
+| POST | `/executor/{id}/test` | `appstack:job:executor` | 连通性探测（**不写审计**：探测不是变更） |
+
+JobBody：`jobName`（必填）、`jobDesc`、`handler`（SHELL / HTTP / SERVICE / INTERNAL）、
+`handlerParam`（**对象**，落库为 varchar，读回是 JSON 字符串）、`cronExpr`、
+`executorId`、`routeStrategy`（FIRST / ROUND / RANDOM / FAILOVER）、
+`blockStrategy`（SERIAL / DISCARD_LATER / COVER_EARLY）、`timeoutSec`、`retryCount`、
+`status`（`0` 停用 / `1` 启用）。注意字段名是 `cronExpr` / `timeoutSec`，不是 `cron` / `timeoutSeconds`。
+
+4 类 handler 的 `handlerParam`：
+
+| handler | 参数 | 约束 |
+| ------- | ---- | ---- |
+| `SHELL` | `command`、`args[]`、`env{}` | 命令名必须在白名单内且不含路径分隔符；**只接受 argv 数组，绝不拼 shell 字符串**；非白名单返回 **6036** |
+| `HTTP` | `method`、`url`、`headers{}`、`body`、`expectStatus` | URL 仅 `http/https`，黑名单元数据地址（`169.254.169.254` 等），不跟随重定向，响应上限 1MB |
+| `SERVICE` | `unit`、`action` | action 必须落在宿主代理允许的动作集内；受保护单元 + 破坏性动作需 confirm `APPLY <unit>`（**6039**） |
+| `INTERNAL` | `task`、`params{}` | `task` 取自 `/options` 的 `internalTasks`（内置 SPI 注册，未知取值返回 **6033**） |
+
+阻塞策略与确认关键字：
+
+| 策略 | 语义 |
+| ---- | ---- |
+| `SERIAL` | 等待前次结束（上限 `timeoutSec`）后执行 |
+| `DISCARD_LATER` | 前次未结束则本轮直接丢弃，记 `DISCARDED` + `trigger_code=500` |
+| `COVER_EARLY` | 覆盖前次（日志标 `KILLED`）后执行本轮 |
+
+确认关键字（服务端逐字校验，非单一硬编码串）：`DELETE JOB <name>`、`STOP JOB <name>`、
+`DELETE EXECUTOR <appName>`、`CLEAR LOG`、`APPLY <unit>`。
+
+### 4. 定时任务日志 `appstack/job-log`
+
+日志沿用 xxl-job 的**双段式**结构，`trigger_*` 段记「调度是否派发出去」，
+`handle_*` 段记「执行结果如何」。两段分开的价值在于：派发失败（`trigger_code=500`）
+与执行失败（`handle_code=500`）是两类完全不同的故障，必须能分辨。
+
+| 方法 | 路径 | 权限 | 说明 |
+| ---- | ---- | ---- | ---- |
+| GET | `/page?jobId=&jobName=&status=&handler=&triggerType=&beginTime=&endTime=` | `appstack:joblog:list` | 日志分页 |
+| GET | `/statistics` | `appstack:joblog:list` | 总数 / 成功 / 失败 / 执行中 / 已丢弃 / 已终止 / 平均耗时 / 保留天数 |
+| GET | `/retention` | `appstack:joblog:list` | 日志保留天数 |
+| GET | `/{id}` | `appstack:joblog:list` | 日志详情 |
+| GET | `/{id}/output` | `appstack:joblog:list` | 执行输出全文（列表页不下发，避免大字段拖慢分页） |
+| DELETE | `/clear` | `appstack:joblog:clear` | 清理（需 confirm `CLEAR LOG`；**必须至少给一个条件** —— 任务 / 时间范围 / 状态，否则 6033） |
+
+ClearLogBody：`jobId`、`beforeTime`（ISO 日期时间）、`status`、`confirm`。
+
+`status` 取值：`RUNNING` / `SUCCESS` / `FAILED` / `TIMEOUT` / `DISCARDED` / `KILLED`。
+
+> **`KILLED` 的边界**：面板侧执行线程可被真实中断（HTTP / 内置任务的日志停在 `KILLED`），
+> 但 SHELL / SERVICE 的真实执行体是宿主机上的子进程，宿主代理没有「按 id 终止某次 host.exec」
+> 的 op，因此进程可能继续跑到自己的超时。**UI 必须明示这一点**，不要把它说成「已杀死」。
 
 ## 八、前端接入要点（Vben Admin 5）
 
