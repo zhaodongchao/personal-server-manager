@@ -409,8 +409,13 @@ public class JwtService {
                     + "请先转换为 PKCS#8：openssl pkcs8 -topk8 -nocrypt -in old.pem -out new.pem");
         }
         if (!privateKey && pem.toUpperCase(Locale.ROOT).contains("RSA PUBLIC KEY")) {
-            // PKCS#1 公钥：包一层 X.509 SubjectPublicKeyInfo 头即可被 JDK 识别
-            der = pkcs1PublicToSpki(der);
+            // PKCS#1 公钥：直接取模数与指数构造 RSA 公钥（不做 DER 重编码）
+            try {
+                return new KeyMaterial(KT_RSA, null, pkcs1PublicKey(der), null, null);
+            } catch (Exception e) {
+                throw new ServiceException(ErrorCode.TOOLS_JWT_KEY_INVALID,
+                    "PKCS#1 公钥解析失败：" + e.getMessage());
+            }
         }
         try {
             if (privateKey) {
@@ -659,10 +664,16 @@ public class JwtService {
     }
 
     private static void writeFixed(byte[] source, byte[] target, int offset, int length) {
-        if (source.length > length) {
+        // DER INTEGER 在最高位为 1 时会带一个前导 0x00（符号位），必须先剥掉再左补零
+        int start = 0;
+        while (start < source.length - 1 && source[start] == 0) {
+            start++;
+        }
+        int size = source.length - start;
+        if (size > length) {
             throw new ServiceException(ErrorCode.TOOLS_JWT_INVALID_TOKEN, "ECDSA 签名分量长度超出预期");
         }
-        System.arraycopy(source, 0, target, offset + length - source.length, source.length);
+        System.arraycopy(source, start, target, offset + length - size, size);
     }
 
     private static byte[] derWrap(int tag, byte[] content) {
@@ -883,24 +894,20 @@ public class JwtService {
     }
 
     /**
-     * PKCS#1 RSA 公钥（{@code SEQUENCE{INTEGER n, INTEGER e}}）包装成
-     * X.509 SubjectPublicKeyInfo，这样 JDK 的 X509EncodedKeySpec 才能识别。
+     * PKCS#1 RSA 公钥（{@code SEQUENCE{INTEGER n, INTEGER e}}，即
+     * {@code -----BEGIN RSA PUBLIC KEY-----}）直接取模数与指数构造公钥。
+     *
+     * <p>刻意不采用「手工重编码成 X.509 SubjectPublicKeyInfo」的写法：BIT STRING 里
+     * 要放的是完整的 {@code RSAPublicKey} DER（含它自己的 tag 与 length），少拼或多拼
+     * 几个字节都会让 JDK 静默解析失败，而失败信息完全指不出问题所在。
      */
-    private static byte[] pkcs1PublicToSpki(byte[] pkcs1) {
+    private static PublicKey pkcs1PublicKey(byte[] pkcs1) throws Exception {
         DerCursor cursor = new DerCursor(pkcs1);
         cursor.expect(0x30);
-        int length = cursor.readLength();
-        int contentStart = cursor.position;
-        if (contentStart + length > pkcs1.length) {
-            throw new ServiceException(ErrorCode.TOOLS_JWT_KEY_INVALID, "PKCS#1 公钥 DER 长度异常");
-        }
-        byte[] inner = Arrays.copyOfRange(pkcs1, contentStart, contentStart + length);
-        // AlgorithmIdentifier: OID 1.2.840.113549.1.1.1 + NULL
-        byte[] algorithmId = new byte[]{
-            0x30, 0x0D, 0x06, 0x09, 0x2A, (byte) 0x86, 0x48, (byte) 0x86,
-            (byte) 0xF7, 0x0D, 0x01, 0x01, 0x01, 0x05, 0x00};
-        byte[] bitString = derWrap(0x03, concat(new byte[]{0}, inner));
-        return derWrap(0x30, concat(algorithmId, bitString));
+        cursor.readLength();
+        BigInteger modulus = new BigInteger(1, cursor.readInteger());
+        BigInteger exponent = new BigInteger(1, cursor.readInteger());
+        return KeyFactory.getInstance("RSA").generatePublic(new RSAPublicKeySpec(modulus, exponent));
     }
 
     /**
