@@ -62,10 +62,8 @@ public class IdSourceBody {
     /** 是否允许自动初始化取号对象 */
     private Boolean autoInit = Boolean.TRUE;
 
-    /** 状态：1 启用 / 0 停用 */
-    @Min(value = 0, message = "状态取值 0 或 1")
-    @Max(value = 1, message = "状态取值 0 或 1")
-    private Integer status = 1;
+    /** 状态：启用 / 停用（API 同时接受 true/false 与 0/1） */
+    private Boolean status = Boolean.TRUE;
 
     @Size(max = 200, message = "备注最长 200 字符")
     private String remark;

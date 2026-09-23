@@ -319,7 +319,7 @@ async function doSaveIdSource() {
       port: idForm.port,
       remark: idForm.remark || undefined,
       sequenceName: idForm.sequenceName.trim() || undefined,
-      status: idForm.status,
+      status: idForm.status ? 1 : 0,
       tableName: idForm.tableName.trim() || undefined,
       username: idForm.username.trim(),
     };

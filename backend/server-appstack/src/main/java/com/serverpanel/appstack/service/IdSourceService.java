@@ -233,7 +233,7 @@ public class IdSourceService implements IdSourceGateway {
         entity.setTableName(blankToNull(body.getTableName()));
         entity.setSequenceName(blankToNull(body.getSequenceName()));
         entity.setAutoInit(Boolean.FALSE.equals(body.getAutoInit()) ? 0 : 1);
-        entity.setStatus(body.getStatus() == null ? 1 : body.getStatus());
+        entity.setStatus(Boolean.FALSE.equals(body.getStatus()) ? 0 : 1);
         entity.setRemark(body.getRemark());
     }
 
