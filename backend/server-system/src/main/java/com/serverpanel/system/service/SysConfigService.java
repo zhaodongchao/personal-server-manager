@@ -41,8 +41,10 @@ public class SysConfigService {
     }
 
     public void update(SysConfig body) {
+        // 缺主键时不能只回统一文案，否则调用方（含前端表单未持有主键的场景）
+        // 拿到一个「请求参数错误」完全无从判断缺的是 id
         if (body.getId() == null) {
-            throw new ServiceException(ErrorCode.BAD_REQUEST);
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "缺少主键 id，无法更新");
         }
         SysConfig db = configMapper.selectById(body.getId());
         if (db == null) {

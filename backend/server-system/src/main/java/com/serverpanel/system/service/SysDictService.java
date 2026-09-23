@@ -50,7 +50,7 @@ public class SysDictService {
     @Transactional
     public void typeUpdate(SysDictType body) {
         if (body.getId() == null) {
-            throw new ServiceException(ErrorCode.BAD_REQUEST);
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "缺少主键 id，无法更新");
         }
         checkTypeUnique(body.getId(), body.getDictType());
         typeMapper.updateById(body);
@@ -99,7 +99,7 @@ public class SysDictService {
     @Transactional
     public void dataUpdate(SysDictData body) {
         if (body.getId() == null) {
-            throw new ServiceException(ErrorCode.BAD_REQUEST);
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "缺少主键 id，无法更新");
         }
         dataMapper.updateById(body);
     }
