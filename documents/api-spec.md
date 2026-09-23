@@ -49,7 +49,7 @@
 | 6xxx | Nginx 管理 | `6010` 实例不存在、`6011` 危险操作需二次确认（confirm 关键字）、`6012` ACME 模式不支持、`6013` DNS-01 仅支持通配符、`6014` 证书不存在或状态非法、`6015` 配置渲染/校验失败 |
 | 6xxx | 服务器配置 | `6020` 配置类别不存在、`6021` 预演校验未通过、`6022` 生效失败（已自动回滚）、`6023` 备份失败、`6024` 高风险变更需键入关键字（防自锁护栏）、`6025` 配置项取值非法或违反安全规则、`6026` 该配置类别正在生效中 |
 | 6xxx | 定时任务 | `6030` 任务不存在、`6031` cron 非法或间隔过短（最小 10 秒）、`6032` 任务执行中或执行器仍被引用、`6033` 处理器参数不合法、`6034` 执行器不存在或不可用、`6035` 内置执行器受保护（不可删除 / 停用）、`6036` 命令不在白名单、`6037` 日志不存在、`6038` 任务名或执行器 AppName 已存在、`6039` 需确认关键字、`6040` 任务未被执行（被阻塞策略或前置检查拦下） |
-| 7xxx | 日常工具 | `7001` 文本过长（单次上限 1 MiB 字符）、`7002` 不支持的算法或编码方式、`7003` 密钥或 IV 不合法、`7004` 加解密失败、`7005` 输入不是合法的 Base64 / Hex、`7006` 混淆参数不合法、`7007` 不支持的混淆方式、`7008` 反混淆失败、`7009` JWT 格式非法、`7010` JWT Header 不合法、`7011` Payload 不是 JSON 对象、`7012` 不支持的 JWT 算法、`7013` JWT 密钥不合法、`7014` JWT 签名失败、`7015` 不支持的 ID 生成方案、`7016` 生成数量不合法（1~1000）、`7017` ID 生成参数不合法（基准、机器号等）、`7018` 待反解的 ID 超长（> 512 字符；非数字形态 > 128 字符）、`7019` 检测到时钟回拨（雪花类 ID 的核心风险） |
+| 7xxx | 日常工具 | `7001` 文本过长（单次上限 1 MiB 字符）、`7002` 不支持的算法或编码方式、`7003` 密钥或 IV 不合法、`7004` 加解密失败、`7005` 输入不是合法的 Base64 / Hex、`7006` 混淆参数不合法、`7007` 不支持的混淆方式、`7008` 反混淆失败、`7009` JWT 格式非法、`7010` JWT Header 不合法、`7011` Payload 不是 JSON 对象、`7012` 不支持的 JWT 算法、`7013` JWT 密钥不合法、`7014` JWT 签名失败、`7015` 不支持的 ID 生成方案、`7016` 生成数量不合法（1~1000）、`7017` ID 生成参数不合法（基准、机器号等）、`7018` 待反解的 ID 超长（> 512 字符；非数字形态 > 128 字符）、`7019` 检测到时钟回拨（雪花类 ID 的核心风险）、`7020` 口令加密密钥不可用、`7021` 取号数据源不存在或已停用、`7022` 目标库被禁止（面板库 / 生产库 / 系统库）、`7023` 取号数据源连接失败、`7024` 表名或序列名不合法、`7025` 数据源类型与生成方案不匹配 |
 
 ### 4. 分页结构与参数
 
@@ -735,6 +735,10 @@ timesync 至少保留一条 NTP 源；`vm.overcommit_memory ∈ {0,1,2}`；
 
 ## 七、应用栈 `/api/v1/appstack`
 
+**存储与菜单**：菜单 `500`「应用栈」下含 `501` Docker、`503` 数据库、`504` 定时任务管理、
+`505` 定时任务日志。其中「取号数据源」不单列菜单，而是作为 `503` 数据库页的第二个页签
+（与「MySQL 实例」并列），按钮权限 `5034` / `5035` / `5036`（见 §7.3）。
+
 ### 1. Docker `appstack/docker`
 
 | 方法 | 路径 | 权限 | 说明 |
@@ -769,7 +773,57 @@ DatabaseBody：`dbName`（必填，≤32，仅 `[a-zA-Z0-9_]`）、`charset`（�
 
 RestoreBody：`backupFile`（必填，仅允许 `[a-zA-Z0-9_.-].sql`，防路径穿越）。
 
-### 3. 定时任务 `appstack/job`
+### 3. 取号数据源 `appstack/id-source`
+
+ID 生成器的「自增计数器 / 序列」两类方案真连库取号时，连的就是这里登记的目标库。
+它与 `appstack/database` 不是一回事：后者管的是**面板自己创建的 MySQL 库**（建库 / 删库 /
+备份恢复），本节管的是「取号要连的任意 PostgreSQL / MySQL 实例」。
+
+| 方法 | 路径 | 权限 | 说明 |
+| ---- | ---- | ---- | ---- |
+| GET | `/page?keyword=` | `appstack:database:list` 或 `tools:id:list` | 数据源分页 |
+| GET | `/options` | 同上（任一） | 下拉项 `IdSourceOption[]`，`value` 为 ID **字符串** |
+| GET | `/status` | 同上（任一） | 环境状态：密钥是否可用、允许的库、默认取号对象名 |
+| POST | `/` | `appstack:id-source:save` | 新增（高危审计，**不记录入参**） |
+| PUT | `/{id}` | `appstack:id-source:save` | 编辑（同上；`password` 留空表示不修改口令） |
+| DELETE | `/{id}` | `appstack:id-source:delete` | 删除登记记录（高危审计） |
+| POST | `/{id}/probe` | `appstack:id-source:probe` | 连通性探测，`data.ok` + `data.message` |
+| POST | `/{id}/init` | `appstack:id-source:probe` | 建序列 / 建自增表（幂等，高危审计） |
+
+**权限用「任一」**：读接口被两个页面消费 —— 数据库页（应用栈权限）与 ID 生成器的
+数据源下拉（日常工具权限），故用 OR 判定；写操作只在数据库页出现，用应用栈自己的权限码。
+
+**三层隔离（本节的立身之本）**：取号会产生真实写副作用，而登记用的往往是高权限账号
+（本机 PG 上的 `zhaodc` 就是超级用户，且同一实例上跑着 `dify`、`dify_plugin` 两个生产库），
+因此设了三道闸门：
+
+1. **硬黑名单库** —— `server_panel`、`dify`、`dify_plugin`、`postgres`、`template0/1`
+   以及各数据库的系统库（`mysql` / `information_schema` / `performance_schema` / `sys`）。
+   这一层**写在代码里**，配置也放不开。
+2. **允许库白名单** —— `serverpanel.id-source.allowed-databases`，默认只有专用库
+   `psm_tools`。非白名单库一律返回 `7022`。
+3. **标识符白名单** —— 表名 / 序列名必须匹配 `^[A-Za-z_][A-Za-z0-9_]*$`（最长 63）
+   且不能以数字开头；**自动创建的对象还必须带 `psm_` 前缀**，以便一眼分辨
+   「面板建的」与「人建的」，否则返回 `7024`。
+
+**口令加密存储**：`password_cipher` 为 AES-256-GCM 密文（格式 `v1:Base64(IV || 密文 || Tag)`），
+密钥来自 `serverpanel.secret.key`（可用环境变量 `PANEL_SECRET_KEY` 覆盖）；
+未配置时退化为「从宿主代理密钥派生」（默认读 `/etc/psm-hostagent/secret`），
+仅为开箱可用 —— **生产环境应显式配置独立密钥**，否则轮换宿主代理密钥会让已保存的
+全部数据源口令解密失败。密钥彻底不可用时，读取照常但保存被拒（`7020`），
+**绝不静默降级成明文存储**。
+
+**取号对象默认命名**：PostgreSQL 侧 `psm_id_seq`（序列），MySQL 侧 `psm_id_demo`
+（`id BIGINT AUTO_INCREMENT` 自增表）。可在数据源上改填，但自动创建仍受 `psm_` 前缀约束。
+
+IdSourceBody：`name`、`dbType`（`POSTGRESQL` / `MYSQL`）、`host`、`port`（1~65535）、
+`dbName`、`username`、`password`、`tableName` / `sequenceName`、`autoInit`、`status`、`remark`。
+
+> 审计口径：`save` / `delete` 标 `risky = true` 且 `recordParams = false`
+> —— 请求体里有数据库口令。脱敏只匹配键名（属"尽力而为"），对这类端点从源头关掉
+> 入参记录才是确定性的。`init` 会执行真实 DDL，同样标 `risky`。
+
+### 4. 定时任务 `appstack/job`
 
 参考 xxl-job 的「调度中心 / 执行器」分层与「调度日志双段」模型，但**借形不借体**：
 不做注册中心与心跳，不做在线编码（GLUE）。宿主侧零新增 op —— SHELL 复用 `host.exec`，
@@ -846,7 +900,7 @@ JobBody：`jobName`（必填）、`jobDesc`、`handler`（SHELL / HTTP / SERVICE
 确认关键字（服务端逐字校验，非单一硬编码串）：`DELETE JOB <name>`、`STOP JOB <name>`、
 `DELETE EXECUTOR <appName>`、`CLEAR LOG`、`APPLY <unit>`。
 
-### 4. 定时任务日志 `appstack/job-log`
+### 5. 定时任务日志 `appstack/job-log`
 
 日志沿用 xxl-job 的**双段式**结构，`trigger_*` 段记「调度是否派发出去」，
 `handle_*` 段记「执行结果如何」。两段分开的价值在于：派发失败（`trigger_code=500`）
@@ -961,7 +1015,7 @@ Header 不是 JSON、密钥解析失败）才返回 7xxx。
 
 | 方法 | 路径 | 权限 | 说明 |
 | ---- | ---- | ---- | ---- |
-| GET | `/tools/id/options` | `tools:id:list` | 9 种方案清单（含位段定义 `segments[]` 与参数定义 `params[]`），**界面按此渲染，不硬编码方案名** |
+| GET | `/tools/id/options` | `tools:id:list` | 9 种方案清单（含位段定义 `segments[]` 与参数定义 `params[]`），**界面按此渲染，不硬编码方案名**；自增 / 序列两类方案的 `sourceId` 参数会带上取号数据源下拉项 |
 | POST | `/tools/id/generate` | `tools:id:exec` | 按方案批量生成 ID（1~1000 个），返回结构化位段拆解 |
 | POST | `/tools/id/decode` | `tools:id:exec` | 反解一个 ID：还原时间、位段取值、结构自检 |
 
@@ -979,10 +1033,21 @@ Header 不是 JSON、密钥解析失败）才返回 7xxx。
 | | `UID_GENERATOR` | `1+28+22+13` | 应用 | 是 |
 | | `SONYFLAKE` | `1+39+8+16` | 应用 | 是 |
 
-**第一类是「参数化模拟」，不是真实取号**：`AUTO_INCREMENT` 与 `SEQUENCE` 的当前值是
-数据库对象里的持久化状态，脱离真实库取不出来。本页按「起始值 / 步长 / 缓存段大小」
-推演号段分配，并演示**事务回滚不回收 ID、批量取号预留导致空洞**这两个真实行为
-（说明落在 `notes[]` 与 `warnings[]`）。**要真实取号请走「应用栈 → 数据库」**。
+**第一类是真连库取号，不是模拟**：`AUTO_INCREMENT` 与 `SEQUENCE` 的当前值是数据库
+对象里的持久化状态，脱离真实库取不出来 —— 所以这两类方案不做推演，而是要求用户先在
+「应用栈 → 数据库 → 取号数据源」登记一个目标库（见 §7.3），由后端经 `IdSourceGateway`
+（SPI 定义在 `server-common`，实现在 `server-appstack`，因此 `server-tools` 不产生横向依赖）
+真连取号：
+
+- `SEQUENCE` 走 `nextval`；`MYSQL_AUTO_INCREMENT` 走 `INSERT` + `LAST_INSERT_ID()`；
+- **空洞与跳号都是真实发生的**：`rollbackAfter` / `rollbackCount` 会让面板真的开事务
+  插入若干行再回滚（自增计数器已推进且不退回，紧接着的号直接跳过一段）；
+  `sessions` > 1 会用多个独立连接并发取号，复现序列 `CACHE` 会话级预分配造成的交错跳号；
+  `increment` / `cache` 会真的执行 `SET SESSION auto_increment_increment` /
+  `ALTER SEQUENCE`；
+- 因此这两类方案的 `params[]` 中 `sourceId` 为**必填**，其下拉选项来自
+  `GET /appstack/id-source/options`，由 `/tools/id/options` 一并下发
+  （数据源为空时 `help` 给出「先去登记」的引导文案）。
 
 雪花类的机器号与序列号是**进程内状态**，因此放在后端生成才能真实演示时钟回拨风险：
 

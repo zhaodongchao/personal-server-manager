@@ -2,6 +2,9 @@ package com.serverpanel.tools.service;
 
 import com.serverpanel.common.exception.ErrorCode;
 import com.serverpanel.common.exception.ServiceException;
+import com.serverpanel.common.id.IdSourceBatch;
+import com.serverpanel.common.id.IdSourceGateway;
+import com.serverpanel.common.id.IdSourceOption;
 import com.serverpanel.tools.dto.IdDecodeBody;
 import com.serverpanel.tools.dto.IdDecodeResultVO;
 import com.serverpanel.tools.dto.IdGenerateBody;
@@ -12,7 +15,8 @@ import com.serverpanel.tools.dto.IdParamVO;
 import com.serverpanel.tools.dto.IdSchemeVO;
 import com.serverpanel.tools.dto.IdSegmentVO;
 import com.serverpanel.tools.dto.OptionVO;
-import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -31,9 +35,11 @@ import java.util.Map;
  *
  * <p><b>本页的三条硬边界</b>：
  * <ol>
- *   <li><b>不连接任何数据库、不创建任何对象</b>。自增计数器与序列属于「数据库对象状态」，
- *       脱离真实库无法取号，因此这两类做的是<b>参数化模拟</b>：按用户给的起始值、步长、
- *       缓存段推演出号段，并显式标注空洞的成因。真实取号请用 {@code appstack/database}。</li>
+ *   <li><b>自增 / 序列两类方案真连库取号</b>：它们属于「数据库对象状态」，脱离真实库无法
+ *       取号。故经 {@link IdSourceGateway}（由应用栈实现，SPI 定义在 server-common，
+ *       本模块不依赖 server-appstack）连到「应用栈 → 数据库 → 取号数据源」登记的目标库，
+ *       用 {@code nextval} / {@code INSERT + LAST_INSERT_ID()} 取号 —— 空洞、跳号、
+ *       会话级预分配浪费都是<b>真实发生</b>的，而不是推演出来的。其余七种方案仍是本地计算。</li>
  *   <li><b>生成结果不参与任何业务</b>，不落库、不缓存，只回给调用方用于观察。</li>
  *   <li><b>不触碰宿主资源</b>：UUIDv1 的 node 一律不读本机网卡（默认随机 node，符合
  *       RFC 4122 §4.5 的隐私做法），要真实 MAC 由用户自己填。因此本模块只依赖
@@ -49,7 +55,7 @@ import java.util.Map;
  * @since 2026-09-23 UTC+8
  */
 @Service
-@RequiredArgsConstructor
+@Slf4j
 public class IdService {
 
     /** 单次生成数量上限 */
@@ -117,6 +123,15 @@ public class IdService {
     /** 全局共享的强随机源（ThreadLocalRandom 不适合 UUID/ObjectId 这类需要密码学强度的场景） */
     private static final SecureRandom RANDOM = new SecureRandom();
 
+    /** 数据源下拉在无可选项时的引导文案 */
+    private static final String SOURCE_EMPTY_HINT =
+        "还没有可用的取号数据源：请先到「应用栈 → 数据库 → 取号数据源」登记一个目标库";
+
+    /** 数据源下拉的帮助文案 */
+    private static final String SOURCE_HELP =
+        "选择要连的目标库。面板会自动创建取号对象（序列 / 自增表，psm_ 前缀），"
+            + "并拒绝面板自身库与生产库 —— 取号会产生真实的写副作用";
+
     static {
         GROUP_LABELS.put(G_DB, "数据库原生自增类");
         GROUP_LABELS.put(G_RANDOM, "随机 / 时间哈希类");
@@ -126,6 +141,20 @@ public class IdService {
     /** 静态方案清单（不可变，只在类加载时构建一次） */
     private final Map<String, IdSchemeVO> schemes = buildSchemes();
 
+    /**
+     * 真连库取号通道。
+     *
+     * <p>用 {@link ObjectProvider} 而不是直接注入，是因为 {@code IdSourceGateway}
+     * 的唯一实现来自 server-appstack：以可选依赖的方式持有它，本模块在
+     * 「应用栈模块未装配」的场合仍能正常启动（此时自增 / 序列会给出明确提示），
+     * 而不是整个 Bean 创建失败把页面一起拖垮。
+     */
+    private final ObjectProvider<IdSourceGateway> gatewayProvider;
+
+    public IdService(ObjectProvider<IdSourceGateway> gatewayProvider) {
+        this.gatewayProvider = gatewayProvider;
+    }
+
     // ==========================================================================
     // 一、可选清单
     // ==========================================================================
@@ -133,7 +162,11 @@ public class IdService {
     /** 方案清单与数量上限 */
     public IdOptionsVO options() {
         IdOptionsVO vo = new IdOptionsVO();
-        vo.setSchemes(new ArrayList<>(schemes.values()));
+        List<IdSchemeVO> list = new ArrayList<>(schemes.values());
+        // 取号数据源是运行期数据（来自登记表），而方案清单是静态的，
+        // 故在此把真实数据源填进自增 / 序列方案的 sourceId 下拉
+        fillSourceOptions(list);
+        vo.setSchemes(list);
         List<OptionVO> groups = new ArrayList<>();
         GROUP_LABELS.forEach((k, v) -> groups.add(new OptionVO(k, v)));
         vo.setGroups(groups);
@@ -180,15 +213,19 @@ public class IdService {
             "ID 暴露数据量，可被外部枚举（爬虫按 id 顺序遍历）",
             "InnoDB 8.0 起自增计数器持久化到 redo log，重启不再回退到 MAX(id)+1（旧版本会）"));
         s.setParams(List.of(
-            num("current", "当前计数器值", "1", 1L, Long.MAX_VALUE,
-                "模拟计数器现在停在哪个值：结果第 1 行就是它（已发出的最后一个号）；从第 2 行起才是接下来会拿到的号，即 current + step"),
-            num("step", "步长（auto_increment_increment）", "1", 1L, 10_000L,
-                "分库分表场景下常设为分片总数，配合起始值把号段错开"),
-            num("holeAfter", "在第几个号之后演示空洞", "0", 0L, 1000L,
-                "模拟「事务回滚 / 批量插入预分配」丢弃号段：0 表示不演示"),
-            num("holeSize", "空洞大小", "0", 0L, 10_000L,
-                "被丢弃的号个数；回滚后这些号永久留空，MAX(id)+1 也不会补回来")));
-        s.setSample("1, 2, 3, 4, 5 …");
+            sel("sourceId", "取号数据源", "",
+                "MySQL 数据源（在「应用栈 → 数据库 → 取号数据源」登记）",
+                new ArrayList<>()),
+            num("sessions", "并发会话数", "1", 1L, 8L,
+                "用 N 个独立连接并发 INSERT 取号 —— LAST_INSERT_ID() 是会话函数，必须与 INSERT 同连接"),
+            num("increment", "步长（auto_increment_increment）", "1", 1L, 1_000L,
+                "分库分表场景设为分片总数：本会话的号按该步长跳，配合各分片起始值错开号段"),
+            num("rollbackAfter", "在第几个号之后演示回滚", "0", 0L, 1_000L,
+                "0 表示不演示。面板会真实地开事务插入若干行再回滚 —— 号已被消耗且不会退回，"
+                    + "紧接着的下一个号会直接跳过一段"),
+            num("rollbackCount", "回滚丢弃的行数", "0", 0L, 100L,
+                "被回滚丢弃的号个数，这些号永久留空（这就是空洞）")));
+        s.setSample("1, 2, 3, 4, 5 …（真实取自目标 MySQL）");
         return s;
     }
 
@@ -208,13 +245,16 @@ public class IdService {
             "同样是单库唯一，跨库需要额外规划",
             "Oracle 用 RAC 多实例时还要设 ORDER / NOORDER，NOORDER 下序号不保证全局单调"));
         s.setParams(List.of(
-            num("start", "起始值（START WITH）", "1", 1L, Long.MAX_VALUE, "序列第一次取到的值"),
-            num("increment", "步长（INCREMENT BY）", "1", 1L, 100_000L, "每次取号累加的值，也是分片错开号段的手段"),
-            num("cache", "缓存段大小（CACHE n）", "1", 1L, 10_000L,
-                "每个会话一次性预分配到 n 个号，用完再申请下一段；设为 1 等价于不缓存"),
+            sel("sourceId", "取号数据源", "",
+                "PostgreSQL 数据源（在「应用栈 → 数据库 → 取号数据源」登记）",
+                new ArrayList<>()),
+            num("increment", "步长（INCREMENT BY）", "0", 0L, 100_000L,
+                "0 表示不改动，沿用序列当前设置；大于 0 会真的执行 ALTER SEQUENCE"),
+            num("cache", "缓存段大小（CACHE n）", "0", 0L, 10_000L,
+                "0 表示不改动；大于 1 会真的 ALTER SEQUENCE，配合多会话就能看到真实的跳号"),
             num("sessions", "并发会话数", "1", 1L, 8L,
-                "模拟几个会话同时取号；大于 1 时会看到号段交错，这正是 CACHE 造成跳号的原因")));
-        s.setSample("会话 A: 1, 2, 3  会话 B: 1001, 1002, 1003");
+                "用 N 个独立连接并发 nextval —— CACHE 是会话级预分配，多会话交错时必然跳号")));
+        s.setSample("会话 A: 1, 2, 3  会话 B: 1001, 1002, 1003（真实取自目标 PostgreSQL）");
         return s;
     }
     /** UUIDv1：60 位 100ns 时间戳 + 14 位时钟序列 + 48 位 MAC */
@@ -561,91 +601,24 @@ public class IdService {
     // ==========================================================================
 
     private List<IdItemVO> genAutoIncrement(int count, Map<String, String> p, IdGenerateResultVO vo) {
-        long current = longParam(p, "current", 1L, 1L, Long.MAX_VALUE, "当前计数器值");
-        long step = longParam(p, "step", 1L, 1L, 10_000L, "步长");
-        long holeAfter = longParam(p, "holeAfter", 0L, 0L, MAX_COUNT, "空洞位置");
-        long holeSize = longParam(p, "holeSize", 0L, 0L, 1_000_000L, "空洞大小");
-
-        vo.getNotes().add("自增计数器由存储引擎维护，下一个 INSERT 拿到的值是 MAX(id) + 步长；"
-            + "这里从计数器当前值 " + current + " 开始推演：第 1 行是它本身，第 2 行起才是接下来会拿到的号（按步长 " + step + " 递增），不连数据库、不建任何表");
-        if (step > 1) {
-            vo.getNotes().add("步长设为 " + step + " 通常用于分库分表：把步长设为分片总数、"
-                + "各分片起始值错开，不同分片就不会撞号");
-        }
-        if (holeAfter > 0 && holeSize > 0) {
-            vo.getNotes().add("已开启空洞演示：第 " + holeAfter + " 个号之后跳过 " + holeSize + " 个");
-            vo.getWarnings().add("事务回滚、批量插入预分配、自增锁批量申请都会丢弃号段；"
-                + "被丢掉的号永久留空，且 MAX(id)+1 不会把它们补回来 —— 所以自增 ID 一定会有空洞");
-        }
-
-        List<IdItemVO> items = new ArrayList<>(count);
-        long value = current;
-        long pendingHole = 0;
-        for (int i = 0; i < count; i++) {
-            if (pendingHole > 0) {
-                value += pendingHole * step;
-            }
-            IdItemVO item = new IdItemVO();
-            item.setIndex(i + 1);
-            item.setValue(String.valueOf(value));
-            String extra = i == 0 ? "计数器当前值" : "上一行 + " + step;
-            if (pendingHole > 0) {
-                extra = "跳号：前面 " + pendingHole + " 个号被回滚丢弃（空洞）";
-                pendingHole = 0;
-            }
-            item.setExtra(extra);
-            items.add(item);
-            value += step;
-            if (holeAfter > 0 && holeSize > 0 && i + 1 == holeAfter) {
-                pendingHole = holeSize;
-            }
-        }
-        return items;
+        IdSourceGateway gateway = requireGateway();
+        long sourceId = sourceIdParam(p);
+        IdSourceBatch batch = gateway.fetch(sourceId, S_MYSQL, count, p);
+        vo.getNotes().add("本次是真实连库取号：每个号都由目标数据库的 InnoDB 自增计数器实际分配，"
+            + "不是推演值");
+        vo.getNotes().addAll(batch.notes());
+        vo.getWarnings().addAll(batch.warnings());
+        return toItems(batch);
     }
 
     private List<IdItemVO> genSequence(int count, Map<String, String> p, IdGenerateResultVO vo) {
-        long start = longParam(p, "start", 1L, 1L, Long.MAX_VALUE, "起始值");
-        long increment = longParam(p, "increment", 1L, 1L, 100_000L, "步长");
-        long cache = longParam(p, "cache", 1L, 1L, 10_000L, "缓存段大小");
-        long sessions = longParam(p, "sessions", 1L, 1L, 8L, "并发会话数");
-
-        vo.getNotes().add("序列是独立于表的对象，START WITH " + start + " / INCREMENT BY " + increment
-            + " / CACHE " + cache + "，由 " + sessions + " 个会话并发取号（每个号段按顺序轮流取，"
-            + "以体现并发下的交错）");
-        if (cache > 1) {
-            vo.getWarnings().add("CACHE " + cache + " 表示会话一次性预分配 " + cache + " 个号，"
-                + "用完再申请下一段。因此各会话只保证「自己段内连续」，全局必然跳号");
-        }
-
-        long group = sessions * cache;
-        long rounds = (count + group - 1) / group;
-        long allocated = rounds * group;
-        if (allocated > count && sessions * cache > 1) {
-            vo.getWarnings().add("本批共预分配 " + allocated + " 个号、实际取用 " + count
-                + " 个，剩余 " + (allocated - count) + " 个随会话结束被丢弃 → 又一处空洞。"
-                + "会话异常断开或实例重启时，现象与此完全一致");
-        }
-        if (sessions == 1 && cache == 1) {
-            vo.getNotes().add("会话数为 1、缓存为 1 时，序列就是严格连续的："
-                + start + ", " + (start + increment) + ", …");
-        }
-
-        List<IdItemVO> items = new ArrayList<>(count);
-        for (int r = 0; r < count; r++) {
-            long s = r % sessions;
-            long t = r / sessions;
-            long k = t / cache;
-            long j = t % cache;
-            long segStart = start + (k * sessions + s) * cache * increment;
-            long value = segStart + j * increment;
-            IdItemVO item = new IdItemVO();
-            item.setIndex(r + 1);
-            item.setValue(String.valueOf(value));
-            item.setExtra("会话 " + (s + 1) + "，缓存段 #" + (k + 1) + "（段起始 " + segStart + "）"
-                + (j == 0 ? "，刚申请到新段" : "，段内第 " + (j + 1) + " 个"));
-            items.add(item);
-        }
-        return items;
+        IdSourceGateway gateway = requireGateway();
+        long sourceId = sourceIdParam(p);
+        IdSourceBatch batch = gateway.fetch(sourceId, S_SEQUENCE, count, p);
+        vo.getNotes().add("本次是真实连库取号：每个号都由目标库的序列对象实际分配，不是推演值");
+        vo.getNotes().addAll(batch.notes());
+        vo.getWarnings().addAll(batch.warnings());
+        return toItems(batch);
     }
     // ==========================================================================
     // 六、随机 / 时间哈希类
@@ -1386,5 +1359,79 @@ public class IdService {
 
     private static List<String> sv(String... v) {
         return new ArrayList<>(List.of(v));
+    }
+    // ==========================================================================
+    // 真连库取号（自增 / 序列）
+    // ==========================================================================
+
+    /** 取号通道；模块未装配时给出可行动的提示，而不是抛 NPE */
+    private IdSourceGateway requireGateway() {
+        IdSourceGateway gateway = gatewayProvider == null ? null : gatewayProvider.getIfAvailable();
+        if (gateway == null) {
+            throw new ServiceException(ErrorCode.TOOLS_ID_SOURCE_NOT_FOUND,
+                "取号数据源通道未就绪（应用栈模块未装配），无法真连库取号");
+        }
+        return gateway;
+    }
+
+    /** 读取并校验 sourceId（自增 / 序列两类方案的必填参数） */
+    private static long sourceIdParam(Map<String, String> p) {
+        String raw = p == null ? null : p.get("sourceId");
+        if (raw == null || raw.isBlank()) {
+            throw new ServiceException(ErrorCode.TOOLS_ID_PARAM_INVALID,
+                "请先选择一个取号数据源（应用栈 → 数据库 → 取号数据源）");
+        }
+        try {
+            return Long.parseLong(raw.trim());
+        } catch (NumberFormatException e) {
+            throw new ServiceException(ErrorCode.TOOLS_ID_PARAM_INVALID, "数据源 ID 不合法：" + raw);
+        }
+    }
+
+    /** 取号结果 → 页面条目（值 + 逐条附加说明） */
+    private static List<IdItemVO> toItems(IdSourceBatch batch) {
+        List<String> values = batch.values();
+        List<String> extras = batch.extras();
+        List<IdItemVO> items = new ArrayList<>(values.size());
+        for (int i = 0; i < values.size(); i++) {
+            IdItemVO item = new IdItemVO();
+            item.setIndex(i + 1);
+            item.setValue(values.get(i));
+            item.setExtra(i < extras.size() ? extras.get(i) : null);
+            items.add(item);
+        }
+        return items;
+    }
+
+    /**
+     * 把真实数据源列表填进自增 / 序列方案的 {@code sourceId} 参数。
+     *
+     * <p>取数据源失败时只填空列表，绝不抛出 —— 方案清单是页面初始化的关键路径，
+     * 不能因为「登记表暂时查不了」就让整页打不开。
+     */
+    private void fillSourceOptions(List<IdSchemeVO> list) {
+        List<OptionVO> sourceOptions = new ArrayList<>();
+        try {
+            for (IdSourceOption option : requireGateway().options()) {
+                sourceOptions.add(new OptionVO(option.value(), option.label()));
+            }
+        } catch (Exception e) {
+            log.debug("取号数据源列表不可用：{}", e.getMessage());
+        }
+        for (IdSchemeVO scheme : list) {
+            if (!S_MYSQL.equals(scheme.getValue()) && !S_SEQUENCE.equals(scheme.getValue())) {
+                continue;
+            }
+            List<IdParamVO> params = scheme.getParams();
+            if (params == null) {
+                continue;
+            }
+            for (IdParamVO param : params) {
+                if ("sourceId".equals(param.getName())) {
+                    param.setOptions(sourceOptions);
+                    param.setHelp(sourceOptions.isEmpty() ? SOURCE_EMPTY_HINT : SOURCE_HELP);
+                }
+            }
+        }
     }
 }

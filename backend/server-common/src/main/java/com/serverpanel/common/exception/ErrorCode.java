@@ -7,7 +7,8 @@ import lombok.Getter;
  * 全局错误码。
  *
  * <p>分段规则：0 成功；4xx/5xx 通用 HTTP 语义；1xxx 认证；2xxx 系统管理；
- * 3xxx 监控；4xxx 文件；5xxx 运维；6xxx 应用栈与 Nginx 管理。
+ * 3xxx 监控；4xxx 文件；5xxx 运维；6xxx 应用栈与 Nginx 管理；
+ * 7xxx 日常工具（含 ID 生成器及其取号数据源）。
  */
 @Getter
 @AllArgsConstructor
@@ -136,7 +137,14 @@ public enum ErrorCode {
     TOOLS_ID_COUNT_INVALID(7016, "生成数量不合法（1~1000）"),
     TOOLS_ID_PARAM_INVALID(7017, "ID 生成参数不合法（起始值、步长、机器号等）"),
     TOOLS_ID_VALUE_INVALID(7018, "待反解的 ID 不合法（为空或超长）"),
-    TOOLS_ID_CLOCK_BACKWARD(7019, "检测到时钟回拨，已按策略拒绝生成（雪花类 ID 的核心风险）");
+    TOOLS_ID_CLOCK_BACKWARD(7019, "检测到时钟回拨，已按策略拒绝生成（雪花类 ID 的核心风险）"),
+    // ===== ID 取号数据源（应用栈登记 + ID 生成器真连库取号）=====
+    TOOLS_ID_SOURCE_KEY_MISSING(7020, "取号数据源口令的加密密钥不可用，无法保存数据源（请配置 serverpanel.secret.key）"),
+    TOOLS_ID_SOURCE_NOT_FOUND(7021, "取号数据源不存在或已停用"),
+    TOOLS_ID_SOURCE_LIB_FORBIDDEN(7022, "目标库被禁止：取号对象不得建在面板库或其它业务生产库上"),
+    TOOLS_ID_SOURCE_UNREACHABLE(7023, "取号数据源连接失败"),
+    TOOLS_ID_SOURCE_IDENTIFIER_INVALID(7024, "表名/序列名不合法（仅允许字母、数字、下划线；自动创建时必须 psm_ 前缀）"),
+    TOOLS_ID_SOURCE_SCHEME_MISMATCH(7025, "该数据源类型不支持此生成方案（PostgreSQL 用序列，MySQL 用自增表）");
 
     private final int code;
     private final String message;

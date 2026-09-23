@@ -27,5 +27,11 @@
       <groupId>com.github.docker-java</groupId>
       <artifactId>docker-java-transport-httpclient5</artifactId>
     </dependency>
+    <!-- PostgreSQL JDBC 驱动：取号数据源在 PostgreSQL 侧走真连库取号（nextval）。
+         驱动版本由 spring-boot-dependencies 统一管理，此处不写版本。 -->
+    <dependency>
+      <groupId>org.postgresql</groupId>
+      <artifactId>postgresql</artifactId>
+    </dependency>
   </dependencies>
 </project>

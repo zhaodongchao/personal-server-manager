@@ -314,6 +314,9 @@ onMounted(async () => {
                     v-if="p.type === 'select'"
                     v-model:value="params[p.name]"
                     :options="p.options ?? []"
+                    :placeholder="
+                      (p.options ?? []).length === 0 ? '暂无可选项' : '请选择'
+                    "
                   />
                   <InputNumber
                     v-else-if="p.type === 'number'"
