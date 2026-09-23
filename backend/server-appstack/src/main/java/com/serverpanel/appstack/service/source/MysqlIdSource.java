@@ -108,7 +108,9 @@ public class MysqlIdSource implements IdSourceProvider {
         String table = jdbc.checkIdentifier(targetOf(spec), "自增表名", true);
 
         int sessions = PostgresIdSource.intParam(params, "sessions", 1, 1, 8);
-        int increment = PostgresIdSource.intParam(params, "increment", 0, 0, 1_000);
+        // 下限取 1（不是 0）：与 tools/id/options 下发的 param schema（min=1, def=1）一致。
+        // 缺省时 intParam 直接返回 def、不做范围校验，所以「不传」仍是"不改动"。
+        int increment = PostgresIdSource.intParam(params, "increment", 0, 1, 1_000);
         int rollbackAfter = PostgresIdSource.intParam(params, "rollbackAfter", 0, 0, 1_000);
         int rollbackCount = PostgresIdSource.intParam(params, "rollbackCount", 0, 0, 100);
 
