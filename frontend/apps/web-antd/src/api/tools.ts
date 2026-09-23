@@ -11,13 +11,15 @@ export namespace ToolsApi {
   export interface Field {
     name: string;
     label: string;
-    /** text / number / textarea */
+    /** text / number / textarea / select / switch / datetime */
     type: string;
     required: boolean;
     def?: null | string;
     help?: null | string;
     min?: null | number;
     max?: null | number;
+    /** type=select 时的候选项 */
+    options?: Option[];
   }
 
   /** 对称算法形态 */
@@ -141,6 +143,85 @@ export function getObfuscateOptionsApi() {
 /** 混淆 / 反混淆 */
 export function obfuscateApi(data: ToolsApi.ObfuscateBody) {
   return requestClient.post<string>('/tools/obfuscate/transform', data);
+}
+
+// ---------------- 二维码工具 ----------------
+
+export namespace ToolsApi {
+  /** 二维码内容类型（文本 / 网址 / WiFi / 名片 ……） */
+  export interface QrcodeType {
+    value: string;
+    label: string;
+    desc: string;
+    fields: Field[];
+    /**
+     * 该类型的限制说明。
+     *
+     * 小程序码（菊花朵码）与公众号带场景值二维码必须经微信服务端 API 生成，
+     * 这里如实说明，避免用户误以为本工具能产出官方码。
+     */
+    notice?: null | string;
+  }
+
+  export interface QrcodeOptions {
+    types: QrcodeType[];
+    eccLevels: Option[];
+    dotStyles: Option[];
+    formats: Option[];
+    defaultSize: number;
+    minSize: number;
+    maxSize: number;
+    defaultMargin: number;
+    maxContentChars: number;
+    maxLogoBytes: number;
+    maxImageBytes: number;
+    /** Logo 占边长比例上限，超过会让码扫不出来 */
+    maxLogoScale: number;
+  }
+
+  export interface QrcodeGenerateBody {
+    contentType: string;
+    /** 按类型而定的参数，字段定义见 options.types[].fields */
+    params?: Record<string, any>;
+    size?: number;
+    margin?: number;
+    /** L / M / Q / H */
+    ecc?: string;
+    fgColor?: string;
+    bgColor?: string;
+    gradientColor?: string;
+    /** SQUARE / DOT / ROUNDED */
+    dotStyle?: string;
+    logoBase64?: string;
+    logoScale?: number;
+    logoRound?: boolean;
+    /** PNG / JPEG */
+    format?: string;
+  }
+
+  export interface QrcodeGenerateResult {
+    /** 实际编码进码里的文本，便于核对拼装结果 */
+    content: string;
+    dataUrl: string;
+    format: string;
+    requestSize: number;
+    /** 吸附到模块整数倍后的真实边长 */
+    realSize: number;
+    scale: number;
+    moduleCount: number;
+    bytes: number;
+  }
+
+  export interface QrcodeDecodeBody {
+    imageBase64: string;
+  }
+
+  export interface QrcodeDecodeResult {
+    found: boolean;
+    text: string;
+    reason: string;
+    format: string;
+  }
 }
 
 // ---------------- JWT 工具 ----------------
@@ -343,4 +424,25 @@ export function generateIdsApi(data: ToolsApi.IdGenerateBody) {
 /** 反解一个已有 ID：拆位段、还原生成时间 */
 export function decodeIdApi(data: ToolsApi.IdDecodeBody) {
   return requestClient.post<ToolsApi.IdDecodeResult>('/tools/id/decode', data);
+}
+
+/** 二维码工具清单（内容类型、容错等级、样式与各项上限） */
+export function getQrcodeOptionsApi() {
+  return requestClient.get<ToolsApi.QrcodeOptions>('/tools/qrcode/options');
+}
+
+/** 生成二维码（含尺寸/配色/码点样式/Logo 控制） */
+export function generateQrcodeApi(data: ToolsApi.QrcodeGenerateBody) {
+  return requestClient.post<ToolsApi.QrcodeGenerateResult>(
+    '/tools/qrcode/generate',
+    data,
+  );
+}
+
+/** 识别图片中的二维码（识别不出不算错误，返回 found=false + 中文原因） */
+export function decodeQrcodeApi(data: ToolsApi.QrcodeDecodeBody) {
+  return requestClient.post<ToolsApi.QrcodeDecodeResult>(
+    '/tools/qrcode/decode',
+    data,
+  );
 }

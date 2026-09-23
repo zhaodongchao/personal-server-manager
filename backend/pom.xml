@@ -44,6 +44,7 @@
     <springdoc.version>3.1.1</springdoc.version>
     <commons-compress.version>1.28.0</commons-compress.version>
     <ip2region.version>2.7.0</ip2region.version>
+    <zxing.version>3.5.3</zxing.version>
     <spotless.version>3.10.2</spotless.version>
   </properties>
 
@@ -158,6 +159,28 @@
         <groupId>org.lionsoul</groupId>
         <artifactId>ip2region</artifactId>
         <version>${ip2region.version}</version>
+      </dependency>
+      <!-- 二维码：core 负责编解码，javase 提供 BufferedImage 图像源（纯离线，无网络请求） -->
+      <dependency>
+        <groupId>com.google.zxing</groupId>
+        <artifactId>core</artifactId>
+        <version>${zxing.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.google.zxing</groupId>
+        <artifactId>javase</artifactId>
+        <version>${zxing.version}</version>
+        <exclusions>
+          <!-- javase 只在命令行场景用得到它们，服务端用不到 -->
+          <exclusion>
+            <groupId>com.beust</groupId>
+            <artifactId>jcommander</artifactId>
+          </exclusion>
+          <exclusion>
+            <groupId>com.github.jai-imageio</groupId>
+            <artifactId>jai-imageio-core</artifactId>
+          </exclusion>
+        </exclusions>
       </dependency>
     </dependencies>
   </dependencyManagement>

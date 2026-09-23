@@ -11,12 +11,21 @@
 
   <artifactId>server-tools</artifactId>
   <name>ServerPanel :: Tools</name>
-  <description>日常工具：字符串加解密、可逆混淆（纯计算，不触碰宿主资源）</description>
+  <description>日常工具：字符串加解密、可逆混淆、二维码（纯计算，不触碰宿主资源）</description>
 
   <dependencies>
     <dependency>
       <groupId>com.serverpanel</groupId>
       <artifactId>server-framework</artifactId>
+    </dependency>
+    <!-- 二维码编解码（ZXing） -->
+    <dependency>
+      <groupId>com.google.zxing</groupId>
+      <artifactId>core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.google.zxing</groupId>
+      <artifactId>javase</artifactId>
     </dependency>
   </dependencies>
 </project>

@@ -4,6 +4,8 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+
 /**
  * 表单字段描述。
  *
@@ -40,4 +42,13 @@ public class FieldVO {
 
     /** number 最大值（可为 null） */
     private Integer max;
+
+    /** select 类型的候选项（仅 type=select 有意义），为空则前端退回文本框 */
+    private List<OptionVO> options;
+
+    /** 保留既有 8 参用法（历史字段没有候选项） */
+    public FieldVO(String name, String label, String type, boolean required, String def,
+        String help, Integer min, Integer max) {
+        this(name, label, type, required, def, help, min, max, null);
+    }
 }

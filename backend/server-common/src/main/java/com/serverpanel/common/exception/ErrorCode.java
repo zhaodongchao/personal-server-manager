@@ -144,7 +144,12 @@ public enum ErrorCode {
     TOOLS_ID_SOURCE_LIB_FORBIDDEN(7022, "目标库被禁止：取号对象不得建在面板库或其它业务生产库上"),
     TOOLS_ID_SOURCE_UNREACHABLE(7023, "取号数据源连接失败"),
     TOOLS_ID_SOURCE_IDENTIFIER_INVALID(7024, "表名/序列名不合法（仅允许字母、数字、下划线；自动创建时必须 psm_ 前缀）"),
-    TOOLS_ID_SOURCE_SCHEME_MISMATCH(7025, "该数据源类型不支持此生成方案（PostgreSQL 用序列，MySQL 用自增表）");
+    TOOLS_ID_SOURCE_SCHEME_MISMATCH(7025, "该数据源类型不支持此生成方案（PostgreSQL 用序列，MySQL 用自增表）"),
+    // ===== 二维码工具（server-tools）=====
+    TOOLS_QR_CONTENT_TOO_LARGE(7026, "二维码内容过长，超出该容错等级与字符集的最大容量"),
+    TOOLS_QR_CONTENT_UNSUPPORTED(7027, "不支持的二维码内容类型"),
+    TOOLS_QR_IMAGE_INVALID(7028, "Logo 或待识别的图片不是合法的图片（支持 PNG / JPEG / GIF）"),
+    TOOLS_QR_ENCODE_FAILED(7029, "二维码生成失败（内容可能超出容量或含无法编码的字符）");
 
     private final int code;
     private final String message;
