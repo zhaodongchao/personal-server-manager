@@ -25,8 +25,13 @@ defineOptions({ name: 'ToolsJwt' });
 
 const TextArea = Input.TextArea;
 
+/**
+ * 示例 token 与示例密钥必须是一对：这里保留经典示例的 Header/Payload，
+ * 但签名按下面这个密钥重新算过 —— 否则「载入示例 → 验证签名」必然不通过
+ * （jwt.io 页面上显示的 your-256-bit-secret 只是占位文案，不是原示例的签发密钥）。
+ */
 const SAMPLE_TOKEN =
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiYWRtaW4iOnRydWUsImlhdCI6MTUxNjIzOTAyMn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiYWRtaW4iOnRydWUsImlhdCI6MTUxNjIzOTAyMn0.reGQzG3OKdoIMWLDKOZ4TICJit3EW69cQE72E2CfzRE';
 const SAMPLE_SECRET = 'your-256-bit-secret';
 const DEFAULT_PAYLOAD = `{
   "sub": "1234567890",
