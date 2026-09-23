@@ -181,7 +181,7 @@ public class IdService {
             "InnoDB 8.0 起自增计数器持久化到 redo log，重启不再回退到 MAX(id)+1（旧版本会）"));
         s.setParams(List.of(
             num("current", "当前计数器值", "1", 1L, Long.MAX_VALUE,
-                "模拟「表里已有的最大自增值」，下一个 INSERT 会得到 current + step"),
+                "模拟计数器现在停在哪个值：结果第 1 行就是它（已发出的最后一个号）；从第 2 行起才是接下来会拿到的号，即 current + step"),
             num("step", "步长（auto_increment_increment）", "1", 1L, 10_000L,
                 "分库分表场景下常设为分片总数，配合起始值把号段错开"),
             num("holeAfter", "在第几个号之后演示空洞", "0", 0L, 1000L,
@@ -567,7 +567,7 @@ public class IdService {
         long holeSize = longParam(p, "holeSize", 0L, 0L, 1_000_000L, "空洞大小");
 
         vo.getNotes().add("自增计数器由存储引擎维护，下一个 INSERT 拿到的值是 MAX(id) + 步长；"
-            + "这里从 " + current + " 起、按步长 " + step + " 推演，不连数据库、不建任何表");
+            + "这里从计数器当前值 " + current + " 开始推演：第 1 行是它本身，第 2 行起才是接下来会拿到的号（按步长 " + step + " 递增），不连数据库、不建任何表");
         if (step > 1) {
             vo.getNotes().add("步长设为 " + step + " 通常用于分库分表：把步长设为分片总数、"
                 + "各分片起始值错开，不同分片就不会撞号");
