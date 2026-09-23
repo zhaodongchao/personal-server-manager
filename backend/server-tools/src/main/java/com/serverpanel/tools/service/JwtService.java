@@ -175,8 +175,12 @@ public class JwtService {
                 "JWT 应为 header.payload.signature 三段，实际 " + parts.length + " 段");
         }
 
-        Map<String, Object> header = readJsonObject(parts[0], ErrorCode.TOOLS_JWT_HEADER_INVALID,
-            "Header 不是合法的 Base64URL 编码 JSON");
+        String headerJson = new String(base64UrlDecode(parts[0], ErrorCode.TOOLS_JWT_HEADER_INVALID,
+            "Header 段不是合法的 Base64URL 编码"), StandardCharsets.UTF_8);
+        Map<String, Object> header = readJsonObject(headerJson, ErrorCode.TOOLS_JWT_HEADER_INVALID,
+            "Header 不是合法的 JSON");
+        // Payload 段的签名校验不依赖其内容，但结构不合法应尽早报错（与前端提示口径一致）
+        base64UrlDecode(parts[1], ErrorCode.TOOLS_JWT_INVALID_TOKEN, "Payload 段不是合法的 Base64URL 编码");
         String alg = asString(header.get("alg"));
         if (isBlank(alg)) {
             throw new ServiceException(ErrorCode.TOOLS_JWT_HEADER_INVALID, "Header 缺少 alg 声明");
