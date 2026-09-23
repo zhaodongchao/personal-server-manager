@@ -1,6 +1,8 @@
 package com.serverpanel.system.entity;
 
 import com.baomidou.mybatisplus.annotation.TableName;
+import tools.jackson.databind.annotation.JsonDeserialize;
+import com.serverpanel.common.jackson.FlexIntegerDeserializer;
 import com.serverpanel.common.mybatis.BaseEntity;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -29,6 +31,7 @@ public class SysQuickNav extends BaseEntity {
     private Integer sort;
 
     /** 1 启用 0 停用 */
+    @JsonDeserialize(using = FlexIntegerDeserializer.class)
     private Integer status;
 
     private String remark;
