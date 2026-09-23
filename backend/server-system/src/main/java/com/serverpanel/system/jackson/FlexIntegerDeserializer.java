@@ -1,4 +1,4 @@
-package com.serverpanel.common.jackson;
+package com.serverpanel.system.jackson;
 
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.JsonParser;

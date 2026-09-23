@@ -2,7 +2,7 @@ package com.serverpanel.system.entity;
 
 import com.baomidou.mybatisplus.annotation.TableName;
 import tools.jackson.databind.annotation.JsonDeserialize;
-import com.serverpanel.common.jackson.FlexIntegerDeserializer;
+import com.serverpanel.system.jackson.FlexIntegerDeserializer;
 import com.serverpanel.common.mybatis.BaseEntity;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
