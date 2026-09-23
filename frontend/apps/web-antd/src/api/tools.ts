@@ -142,3 +142,77 @@ export function getObfuscateOptionsApi() {
 export function obfuscateApi(data: ToolsApi.ObfuscateBody) {
   return requestClient.post<string>('/tools/obfuscate/transform', data);
 }
+
+// ---------------- JWT 工具 ----------------
+
+export namespace ToolsApi {
+  /** JWT 算法描述（由服务端下发，前端不硬编码算法名） */
+  export interface JwtAlgorithm {
+    value: string;
+    label: string;
+    /** HMAC / RSA / RSA-PSS / ECDSA / EdDSA */
+    family: string;
+    /** 所需密钥类型：HMAC / RSA / EC / OKP */
+    keyType: string;
+    signable: boolean;
+    note: string;
+  }
+
+  /** JWT 页可选清单 */
+  export interface JwtOptions {
+    algorithms: JwtAlgorithm[];
+    keyFormats: Option[];
+    secretEncodings: Option[];
+    maxChars: number;
+  }
+
+  export interface JwtVerifyBody {
+    token: string;
+    /** SECRET / PEM / JWK */
+    keyFormat: string;
+    key: string;
+    /** TEXT / BASE64 / HEX（仅对称密钥使用） */
+    secretEncoding: string;
+  }
+
+  export interface JwtVerifyResult {
+    verified: boolean;
+    algorithm: string;
+    family: string;
+    keyType: null | string;
+    kid: null | string;
+    reason: string;
+  }
+
+  export interface JwtSignBody {
+    algorithm: string;
+    /** Payload JSON 对象原文 */
+    payload: string;
+    /** Header 附加字段（alg 不可覆盖） */
+    header?: string;
+    keyFormat: string;
+    key: string;
+    secretEncoding: string;
+  }
+
+  export interface JwtSignResult {
+    token: string;
+    header: string;
+    algorithm: string;
+  }
+}
+
+/** JWT 工具可选清单 */
+export function getJwtOptionsApi() {
+  return requestClient.get<ToolsApi.JwtOptions>('/tools/jwt/options');
+}
+
+/** 验证 JWT 签名（密钥只发到后端，不落审计表） */
+export function verifyJwtApi(data: ToolsApi.JwtVerifyBody) {
+  return requestClient.post<ToolsApi.JwtVerifyResult>('/tools/jwt/verify', data);
+}
+
+/** 签发 JWT（产出可直接使用的凭据，审计按 risky 标记） */
+export function signJwtApi(data: ToolsApi.JwtSignBody) {
+  return requestClient.post<ToolsApi.JwtSignResult>('/tools/jwt/sign', data);
+}

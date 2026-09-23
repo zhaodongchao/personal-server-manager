@@ -123,7 +123,14 @@ public enum ErrorCode {
     TOOLS_ENCODING_INVALID(7005, "输入不是合法的 Base64 / Hex 编码"),
     TOOLS_PARAM_INVALID(7006, "混淆参数不合法"),
     TOOLS_METHOD_UNSUPPORTED(7007, "不支持的混淆方式"),
-    TOOLS_DEOBFUSCATE_FAILED(7008, "反混淆失败，输入可能不是该方式生成的");
+    TOOLS_DEOBFUSCATE_FAILED(7008, "反混淆失败，输入可能不是该方式生成的"),
+    // ===== JWT 工具（server-tools）=====
+    TOOLS_JWT_INVALID_TOKEN(7009, "不是合法的 JWT（应为 header.payload.signature 三段）"),
+    TOOLS_JWT_HEADER_INVALID(7010, "JWT Header 不合法（不是 JSON 或缺少 alg）"),
+    TOOLS_JWT_PAYLOAD_INVALID(7011, "Payload 不是合法的 JSON 对象"),
+    TOOLS_JWT_ALG_UNSUPPORTED(7012, "不支持的 JWT 算法（或本工具不提供该算法的签发）"),
+    TOOLS_JWT_KEY_INVALID(7013, "JWT 密钥不合法（PEM / JWK 解析失败或与算法不匹配）"),
+    TOOLS_JWT_SIGN_FAILED(7014, "JWT 签名失败");
 
     private final int code;
     private final String message;
