@@ -25,6 +25,9 @@ defineOptions({ name: 'SystemConfig' });
 const { hasAccessByCodes } = useAccess();
 
 const editing = ref(false);
+// 与快捷导航同因：表单 schema 无 id 字段，setValues 默认过滤掉 schema 之外的键，
+// 编辑中的主键必须单独持有，否则提交的 PUT 请求体缺 id 会被后端判 400。
+const editingId = ref<string>();
 
 const formOptions: VbenFormProps = {
   collapsed: false,
@@ -140,7 +143,7 @@ const [ConfigModal, configModalApi] = useVbenModal({
       configName: values.configName,
       configType: values.configType,
       configValue: values.configValue,
-      id: editing.value ? values.id : undefined,
+      id: editing.value ? editingId.value : undefined,
       remark: values.remark,
     };
     configModalApi.lock();
@@ -162,6 +165,7 @@ const [ConfigModal, configModalApi] = useVbenModal({
 
 function openCreate() {
   editing.value = false;
+  editingId.value = undefined;
   configFormApi.resetForm();
   configFormApi.setValues({ configType: 'N' });
   configModalApi.setData({ title: '新增参数' });
@@ -170,13 +174,13 @@ function openCreate() {
 
 function openEdit(record: ConfigApi.SysConfig & { id: string }) {
   editing.value = true;
+  editingId.value = record.id;
   configFormApi.resetForm();
   configFormApi.setValues({
     configKey: record.configKey,
     configName: record.configName,
     configType: record.configType || 'N',
     configValue: record.configValue,
-    id: record.id,
     remark: record.remark,
   });
   configModalApi.setData({ title: '编辑参数' });

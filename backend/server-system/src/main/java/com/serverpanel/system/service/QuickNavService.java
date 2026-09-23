@@ -49,8 +49,10 @@ public class QuickNavService {
     }
 
     public void update(SysQuickNav body) {
+        // 不能只回统一文案：缺 id 是调用方最容易踩的坑（前端未持主键时会提交一个
+        // 没有 id 的 PUT），只给「请求参数错误」让人无从排查。
         if (body.getId() == null) {
-            throw new ServiceException(ErrorCode.BAD_REQUEST);
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "缺少主键 id，无法更新");
         }
         if (quickNavMapper.selectById(body.getId()) == null) {
             throw new ServiceException(ErrorCode.NOT_FOUND);

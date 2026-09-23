@@ -97,13 +97,21 @@ public class GlobalExceptionHandler {
         return R.fail(ErrorCode.BAD_REQUEST.getCode(), msg);
     }
 
-    /** 缺少必填参数 / 类型不匹配 */
+    /**
+     * 缺少必填参数 / 类型不匹配 / 请求体无法反序列化。
+     *
+     * <p>三者的响应体都是同一个 400，但根因完全不同（缺少 @RequestParam、路径变量
+     * 类型不对、JSON 字段类型对不上导致 HttpMessageNotReadable），只看响应体永远
+     * 不知道是哪一种。这里打一条 warn 落日志，避免每次 400 都靠猜。日志只带异常
+     * 消息，不打印请求体（请求体可能含口令等敏感字段）。
+     */
     @ExceptionHandler({
         MissingServletRequestParameterException.class,
         MethodArgumentTypeMismatchException.class,
         HttpMessageNotReadableException.class
     })
-    public R<Void> handleBadRequest(Exception e) {
+    public R<Void> handleBadRequest(Exception e, HttpServletRequest request) {
+        log.warn("请求参数错误 [{} {}] {}", request.getMethod(), request.getRequestURI(), e.getMessage());
         return R.fail(ErrorCode.BAD_REQUEST);
     }
 

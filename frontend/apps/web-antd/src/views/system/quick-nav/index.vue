@@ -26,6 +26,10 @@ defineOptions({ name: 'SystemQuickNav' });
 const { hasAccessByCodes } = useAccess();
 
 const editing = ref(false);
+// 编辑中的记录主键：表单 schema 里没有 id 字段，而 setValues 默认
+// filterFields=true，会把 schema 之外的键丢掉 —— id 必须单独持有，
+// 否则提交时请求体没有 id，PUT 会被后端以 400 拒掉。
+const editingId = ref<string>();
 
 const formOptions: VbenFormProps = {
   collapsed: false,
@@ -161,7 +165,7 @@ const [QuickNavModal, quickNavModalApi] = useVbenModal({
     const body: QuickNavApi.QuickNav = {
       displayName: values.displayName,
       icon: values.icon || 'lucide:app-window',
-      id: editing.value ? values.id : undefined,
+      id: editing.value ? editingId.value : undefined,
       path: values.path || '',
       port: values.port ?? -1,
       remark: values.remark,
@@ -187,6 +191,7 @@ const [QuickNavModal, quickNavModalApi] = useVbenModal({
 
 function openCreate() {
   editing.value = false;
+  editingId.value = undefined;
   quickNavFormApi.resetForm();
   quickNavFormApi.setValues({ icon: 'lucide:app-window', sort: 0, status: 1 });
   quickNavModalApi.setData({ title: '新增导航' });
@@ -195,11 +200,11 @@ function openCreate() {
 
 function openEdit(record: QuickNavApi.QuickNav & { id: string }) {
   editing.value = true;
+  editingId.value = record.id;
   quickNavFormApi.resetForm();
   quickNavFormApi.setValues({
     displayName: record.displayName,
     icon: record.icon || 'lucide:app-window',
-    id: record.id,
     path: record.path || '',
     port: record.port ?? -1,
     remark: record.remark,
