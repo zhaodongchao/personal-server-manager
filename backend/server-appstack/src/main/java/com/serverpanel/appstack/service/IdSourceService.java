@@ -195,6 +195,32 @@ public class IdSourceService implements IdSourceGateway {
         }
         // 库名在这里就拦下：越早拦住「把取号对象建到生产库」的尝试越好
         jdbc.checkDatabase(body.getDbName());
+        // 取号对象名也在登记时校验：与使用时（IdSourceProvider）用同一把尺子。
+        // 否则会出现「登记成功、取号必败」的 fail-late —— 记录躺在列表里却永远取不到号。
+        if (kind == DbKind.POSTGRESQL) {
+            checkOptionalIdentifier(body.getSequenceName(), "序列名");
+        } else {
+            checkOptionalIdentifier(body.getTableName(), "自增表名");
+        }
+    }
+
+    /**
+     * 校验可选的取号对象名。
+     *
+     * <p>为空表示沿用默认对象名（默认名本身自带 {@code psm_} 前缀）；非空则按「自动创建」
+     * 的标准校验：标识符正则 + {@code psm_} 前缀，与使用时 {@code IdSourceProvider}
+     * 内的校验口径完全一致，避免登记与使用两套标准。
+     *
+     * @param name  对象名，允许为 {@code null} 或空白
+     * @param label 报错文案中的语义标签（如「序列名」）
+     * @author zhaodc
+     * @since 2026-09-23
+     */
+    private void checkOptionalIdentifier(String name, String label) {
+        if (name == null || name.isBlank()) {
+            return;
+        }
+        jdbc.checkIdentifier(name, label, true);
     }
 
     private void apply(AppIdSource entity, IdSourceBody body) {
