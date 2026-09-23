@@ -11,6 +11,9 @@ import com.serverpanel.system.mapper.SysQuickNavMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 /**
  * 快捷导航配置 Service。
  */
@@ -20,12 +23,17 @@ public class QuickNavService {
 
     private final SysQuickNavMapper quickNavMapper;
 
+    /** 域名里误填的方案前缀：http://host 或 https://host:8443/xxx */
+    private static final Pattern SCHEME_PREFIX =
+        Pattern.compile("^(https?)://(.*)$", Pattern.CASE_INSENSITIVE);
+
     public PageResult<SysQuickNav> page(PageQuery query, String keyword) {
         Page<SysQuickNav> page = quickNavMapper.selectPage(
             new Page<>(query.getPageNum(), query.getPageSize()),
             new LambdaQueryWrapper<SysQuickNav>()
                 .and(keyword != null && !keyword.isBlank(), w -> w
                     .like(SysQuickNav::getDisplayName, keyword)
+                    .or().like(SysQuickNav::getDomain, keyword)
                     .or().like(SysQuickNav::getRemark, keyword))
                 .orderByAsc(SysQuickNav::getSort)
                 .orderByAsc(SysQuickNav::getId));
@@ -76,6 +84,8 @@ public class QuickNavService {
         if (body.getPath() == null) {
             body.setPath("");
         }
+        normalizeDomain(body);
+        body.setHttps(body.getHttps() != null && body.getHttps() == 1 ? 1 : 0);
         if (body.getIcon() == null || body.getIcon().isBlank()) {
             body.setIcon("lucide:app-window");
         }
@@ -85,5 +95,31 @@ public class QuickNavService {
         if (body.getStatus() == null) {
             body.setStatus(1);
         }
+    }
+
+    /**
+     * 域名归一化：只留 host[:port]，协议交给 https 字段。
+     *
+     * <p>运维最常见的输入是直接粘一整条地址，所以遇到 http(s):// 前缀时把它
+     * 翻译成 https 标记，而不是存成自相矛盾的「https=1 + http://xxx」；
+     * 路径部分丢弃 —— 表里另有 path 列，域名混着路径会拼出双份前缀。
+     */
+    private void normalizeDomain(SysQuickNav body) {
+        String raw = body.getDomain();
+        if (raw == null || raw.isBlank()) {
+            body.setDomain("");
+            return;
+        }
+        String domain = raw.trim();
+        Matcher matcher = SCHEME_PREFIX.matcher(domain);
+        if (matcher.find()) {
+            body.setHttps("https".equalsIgnoreCase(matcher.group(1)) ? 1 : 0);
+            domain = matcher.group(2);
+        }
+        int slash = domain.indexOf('/');
+        if (slash >= 0) {
+            domain = domain.substring(0, slash);
+        }
+        body.setDomain(domain.trim());
     }
 }

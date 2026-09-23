@@ -605,8 +605,9 @@ public class FirewallService {
 
     public OpsFirewallChange changeDetail(Long id) {
         OpsFirewallChange row = changeMapper.selectById(id);
+        // 「查不到」是 404 语义：既不是调用方参数错，也不是服务端故障
         if (row == null) {
-            throw new ServiceException(ErrorCode.BAD_REQUEST, "变更记录不存在");
+            throw new ServiceException(ErrorCode.NOT_FOUND.getCode(), "变更记录不存在：" + id);
         }
         return row;
     }
@@ -620,7 +621,7 @@ public class FirewallService {
     public FirewallActionResultVO rollback(Long id, String confirm) {
         OpsFirewallChange row = changeMapper.selectById(id);
         if (row == null) {
-            throw new ServiceException(ErrorCode.BAD_REQUEST, "变更记录不存在");
+            throw new ServiceException(ErrorCode.NOT_FOUND.getCode(), "变更记录不存在：" + id);
         }
         if (row.getRollbackable() == null || row.getRollbackable() == 0
                 || row.getUndoJson() == null || row.getUndoJson().isBlank()) {

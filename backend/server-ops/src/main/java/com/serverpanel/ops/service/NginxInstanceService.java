@@ -38,9 +38,12 @@ public class NginxInstanceService {
     }
 
     public OpsNginxInstance require(Long id) {
-        OpsNginxInstance inst = id == null ? null : instanceMapper.selectById(id);
+        if (id == null) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "缺少 nginx 实例 id");
+        }
+        OpsNginxInstance inst = instanceMapper.selectById(id);
         if (inst == null) {
-            throw new ServiceException(ErrorCode.NGINX_INSTANCE_NOT_FOUND);
+            throw new ServiceException(ErrorCode.NGINX_INSTANCE_NOT_FOUND, "nginx 实例不存在：" + id);
         }
         return inst;
     }

@@ -21,6 +21,7 @@ import {
 } from 'ant-design-vue';
 
 import { getQuickServicesApi, getSshLoginsApi, getVisitSourcesApi } from '#/api';
+import { quickNavHostLabel, quickNavUrl } from '#/utils/quick-nav';
 
 defineOptions({ name: 'DashboardWorkspace' });
 
@@ -74,13 +75,12 @@ function serviceIcon(service: DashboardApi.QuickService): string {
   return service.icon || SERVICE_ICONS[service.displayName] || DEFAULT_ICON;
 }
 
-/** 服务访问地址：http://<host>:<port><path>（端口未知则仅返回主机） */
+/**
+ * 服务访问地址：协议与主机由导航配置决定（域名留空时跟随面板当前域名），
+ * 规则与管理页列表共用 utils/quick-nav.ts，避免两处各拼一套。
+ */
 function serviceUrl(service: DashboardApi.QuickService): string {
-  const host = window.location.hostname;
-  if (service.port <= 0) {
-    return `http://${host}${service.path}`;
-  }
-  return `http://${host}:${service.port}${service.path}`;
+  return quickNavUrl(service);
 }
 
 function renderSourceChart() {
@@ -151,8 +151,11 @@ onMounted(async () => {
           </div>
           <div class="text-sm font-medium">{{ service.displayName }}</div>
           <div class="flex items-center gap-1 text-xs text-gray-400">
-            <span class="inline-block h-1.5 w-1.5 rounded-full bg-green-500" />
-            {{ service.port > 0 ? `:${service.port}` : '运行中' }}
+            <span
+              class="inline-block h-1.5 w-1.5 rounded-full"
+              :class="service.running ? 'bg-green-500' : 'bg-gray-300'"
+            />
+            {{ quickNavHostLabel(service) }}
           </div>
         </a>
       </div>

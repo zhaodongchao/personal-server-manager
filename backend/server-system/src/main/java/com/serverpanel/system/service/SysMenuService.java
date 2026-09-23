@@ -1,6 +1,7 @@
 package com.serverpanel.system.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.serverpanel.common.exception.ErrorCode;
 import com.serverpanel.common.exception.ServiceException;
 import com.serverpanel.system.dto.MenuBody;
@@ -74,6 +75,30 @@ public class SysMenuService {
         }
         copy(body, menu);
         menuMapper.updateById(menu);
+        // updateById 走 MyBatis-Plus 默认的 NOT_NULL 策略，会跳过 null 字段 ——
+        // 按类型清理掉的那些列必须再显式置空，否则「按钮带着路由地址」清不掉。
+        LambdaUpdateWrapper<SysMenu> clear = new LambdaUpdateWrapper<SysMenu>()
+            .eq(SysMenu::getId, id);
+        boolean dirty = false;
+        if (menu.getIcon() == null) {
+            clear.set(SysMenu::getIcon, null);
+            dirty = true;
+        }
+        if (menu.getRoutePath() == null) {
+            clear.set(SysMenu::getRoutePath, null);
+            dirty = true;
+        }
+        if (menu.getComponent() == null) {
+            clear.set(SysMenu::getComponent, null);
+            dirty = true;
+        }
+        if (menu.getPerms() == null) {
+            clear.set(SysMenu::getPerms, null);
+            dirty = true;
+        }
+        if (dirty) {
+            menuMapper.update(null, clear);
+        }
     }
 
     public void delete(Long id) {
@@ -87,14 +112,24 @@ public class SysMenuService {
         menuMapper.deleteById(id);
     }
 
+    /**
+     * 字段归属收敛到服务端：M 目录没有组件/权限标识，F 按钮没有图标/路由/组件。
+     *
+     * <p>表单用 dependencies 隐藏这些字段，但 dependencies 只管渲染、不清值 ——
+     * 编辑时把类型从 M 改成 F，原先的图标和路由仍会随请求体提交。这里按类型
+     * 归一化一次，保证无论调用方传什么，库里都不会出现「按钮带着组件路径」。
+     */
     private void copy(MenuBody body, SysMenu menu) {
         menu.setParentId(body.getParentId());
         menu.setMenuName(body.getMenuName());
         menu.setMenuType(body.getMenuType());
-        menu.setRoutePath(body.getRoutePath());
-        menu.setComponent(body.getComponent());
-        menu.setPerms(body.getPerms());
-        menu.setIcon(body.getIcon());
+        boolean isDir = "M".equals(body.getMenuType());
+        boolean isMenu = "C".equals(body.getMenuType());
+        boolean isButton = "F".equals(body.getMenuType());
+        menu.setIcon(isButton ? null : body.getIcon());
+        menu.setRoutePath(isButton ? null : body.getRoutePath());
+        menu.setComponent(isMenu ? body.getComponent() : null);
+        menu.setPerms(isDir ? null : body.getPerms());
         menu.setSort(body.getSort() == null ? 0 : body.getSort());
         menu.setVisible(body.getVisible() == null ? 1 : body.getVisible());
         menu.setStatus(body.getStatus() == null ? 1 : body.getStatus());

@@ -31,6 +31,17 @@ public class SysQuickNav extends BaseEntity {
     /** 展示名 */
     private String displayName;
 
+    /**
+     * 访问域名 / 主机：留空表示跟随面板当前访问域名（浏览器 hostname），
+     * 填了则按它跳转（可带端口，如 nas.example.com 或 10.0.0.5:8080）。
+     * 只能写 host[:port]，协议由 https 决定 —— normalize 会剥掉误填的方案前缀。
+     */
+    private String domain;
+
+    /** 是否走 https：1 https 0 http */
+    @JsonDeserialize(using = FlexIntegerDeserializer.class)
+    private Integer https;
+
     /** Web 端口（-1 未知） */
     private Integer port;
 

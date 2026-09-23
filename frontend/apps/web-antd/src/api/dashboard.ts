@@ -24,6 +24,10 @@ export namespace DashboardApi {
     name: string;
     /** 展示名 */
     displayName: string;
+    /** 访问域名/主机，留空则用面板当前访问域名 */
+    domain: string;
+    /** 1 https 0 http */
+    https: number;
     /** Web 管理端口（-1 表示未知） */
     port: number;
     /** Web 访问路径前缀 */

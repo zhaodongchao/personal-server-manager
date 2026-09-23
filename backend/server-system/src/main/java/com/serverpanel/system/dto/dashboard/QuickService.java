@@ -14,6 +14,12 @@ public class QuickService {
     /** 展示名（如 Jenkins） */
     private String displayName;
 
+    /** 访问域名 / 主机，留空则用面板当前访问域名 */
+    private String domain;
+
+    /** 是否走 https（1 https 0 http） */
+    private int https;
+
     /** Web 管理端口（-1 表示未知） */
     private int port;
 

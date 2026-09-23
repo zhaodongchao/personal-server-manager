@@ -5,6 +5,10 @@ export namespace QuickNavApi {
     id?: string;
     /** 展示名 */
     displayName: string;
+    /** 访问域名/主机，留空则用面板当前访问域名 */
+    domain?: string;
+    /** 1 https 0 http */
+    https?: number;
     /** Web 端口（-1 未知） */
     port?: number;
     /** Web 路径前缀 */

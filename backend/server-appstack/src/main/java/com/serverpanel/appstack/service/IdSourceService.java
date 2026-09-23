@@ -238,8 +238,11 @@ public class IdSourceService implements IdSourceGateway {
     }
 
     private AppIdSource require(Long id) {
+        // id 没传（调用方漏参）和 id 查不到（数据没了）是两回事，
+        // 前者是参数错误，后者才是 404 —— 混成一个 TOOLS_ID_SOURCE_NOT_FOUND
+        // 会让调用方误以为记录被删了。
         if (id == null) {
-            throw new ServiceException(ErrorCode.TOOLS_ID_SOURCE_NOT_FOUND);
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "缺少取号数据源 id");
         }
         AppIdSource source = mapper.selectById(id);
         if (source == null) {

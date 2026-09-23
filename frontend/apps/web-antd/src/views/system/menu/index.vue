@@ -216,14 +216,17 @@ const [MenuModal, menuModalApi] = useVbenModal({
     const { valid } = await menuFormApi.validate();
     if (!valid) return;
     const values = await menuFormApi.getValues();
+    // 表单的 dependencies 只隐藏字段、不清空旧值，这里按类型裁剪，
+    // 与后端 SysMenuService.copy() 的归一化口径保持一致
+    const menuType = values.menuType;
     const body: MenuApi.MenuBody = {
-      component: values.component || undefined,
-      icon: values.icon || undefined,
+      component: menuType === 'C' ? values.component || undefined : undefined,
+      icon: menuType === 'F' ? undefined : values.icon || undefined,
       menuName: values.menuName,
       menuType: values.menuType,
       parentId: values.parentId ?? '0',
-      perms: values.perms || undefined,
-      routePath: values.routePath || undefined,
+      perms: menuType === 'M' ? undefined : values.perms || undefined,
+      routePath: menuType === 'F' ? undefined : values.routePath || undefined,
       sort: values.sort ?? 0,
       status: values.status,
       visible: values.visible,

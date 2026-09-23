@@ -100,6 +100,8 @@ public class DashboardService {
                 ? nav.getDisplayName().toLowerCase(Locale.ROOT)
                 : keywords.get(0));
             svc.setDisplayName(nav.getDisplayName());
+            svc.setDomain(nav.getDomain() == null ? "" : nav.getDomain());
+            svc.setHttps(nav.getHttps() != null && nav.getHttps() == 1 ? 1 : 0);
             svc.setPort(nav.getPort() == null ? -1 : nav.getPort());
             svc.setPath(nav.getPath() == null ? "" : nav.getPath());
             svc.setIcon(nav.getIcon() == null || nav.getIcon().isBlank()

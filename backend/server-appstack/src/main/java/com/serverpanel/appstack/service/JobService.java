@@ -586,9 +586,12 @@ public class JobService {
     }
 
     private AppExecutor requireExecutor(Long id) {
-        AppExecutor executor = id == null ? null : executorMapper.selectById(id);
+        if (id == null) {
+            throw new ServiceException(ErrorCode.BAD_REQUEST.getCode(), "缺少执行器 id");
+        }
+        AppExecutor executor = executorMapper.selectById(id);
         if (executor == null) {
-            throw new ServiceException(ErrorCode.JOB_EXECUTOR_UNAVAILABLE);
+            throw new ServiceException(ErrorCode.JOB_EXECUTOR_UNAVAILABLE, "执行器不存在：" + id);
         }
         return executor;
     }

@@ -20,8 +20,11 @@ import {
   getQuickNavPageApi,
   updateQuickNavApi,
 } from '#/api';
+import { quickNavUrl } from '#/utils/quick-nav';
 
 defineOptions({ name: 'SystemQuickNav' });
+
+const panelHost = window.location.hostname;
 
 const { hasAccessByCodes } = useAccess();
 
@@ -51,6 +54,18 @@ const gridOptions: VxeTableGridOptions = {
       field: 'icon',
       slots: { default: 'icon' },
       title: '图标',
+      width: 90,
+    },
+    {
+      field: 'domain',
+      slots: { default: 'domain' },
+      title: '访问域名',
+      width: 160,
+    },
+    {
+      field: 'https',
+      slots: { default: 'https' },
+      title: '协议',
       width: 90,
     },
     { field: 'port', title: '端口', width: 90 },
@@ -103,6 +118,27 @@ const [QuickNavForm, quickNavFormApi] = useVbenForm({
       fieldName: 'displayName',
       label: '名称',
       rules: 'required',
+    },
+    {
+      component: 'Input',
+      componentProps: {
+        allowClear: true,
+        placeholder: '如 git.example.com，留空跟随面板域名',
+      },
+      fieldName: 'domain',
+      label: '域名',
+    },
+    {
+      component: 'RadioGroup',
+      componentProps: {
+        options: [
+          { label: '是', value: 1 },
+          { label: '否', value: 0 },
+        ],
+      },
+      defaultValue: 0,
+      fieldName: 'https',
+      label: 'HTTPS',
     },
     {
       component: 'InputNumber',
@@ -164,6 +200,8 @@ const [QuickNavModal, quickNavModalApi] = useVbenModal({
     const values = await quickNavFormApi.getValues();
     const body: QuickNavApi.QuickNav = {
       displayName: values.displayName,
+      domain: values.domain || '',
+      https: values.https ?? 0,
       icon: values.icon || 'lucide:app-window',
       id: editing.value ? editingId.value : undefined,
       path: values.path || '',
@@ -193,7 +231,7 @@ function openCreate() {
   editing.value = false;
   editingId.value = undefined;
   quickNavFormApi.resetForm();
-  quickNavFormApi.setValues({ icon: 'lucide:app-window', sort: 0, status: 1 });
+  quickNavFormApi.setValues({ https: 0, icon: 'lucide:app-window', sort: 0, status: 1 });
   quickNavModalApi.setData({ title: '新增导航' });
   quickNavModalApi.open();
 }
@@ -204,6 +242,8 @@ function openEdit(record: QuickNavApi.QuickNav & { id: string }) {
   quickNavFormApi.resetForm();
   quickNavFormApi.setValues({
     displayName: record.displayName,
+    domain: record.domain || '',
+    https: record.https ?? 0,
     icon: record.icon || 'lucide:app-window',
     path: record.path || '',
     port: record.port ?? -1,
@@ -242,6 +282,16 @@ function confirmDelete(record: QuickNavApi.QuickNav & { id: string }) {
       </template>
       <template #icon="{ row }">
         <IconifyIcon :icon="row.icon || 'lucide:app-window'" class="text-lg" />
+      </template>
+      <template #domain="{ row }">
+        <span :title="quickNavUrl(row)">
+          {{ row.domain || `跟随面板（${panelHost}）` }}
+        </span>
+      </template>
+      <template #https="{ row }">
+        <Tag :color="row.https === 1 ? 'green' : 'default'">
+          {{ row.https === 1 ? 'HTTPS' : 'HTTP' }}
+        </Tag>
       </template>
       <template #status="{ row }">
         <Tag :color="row.status === 1 ? 'processing' : 'default'">
