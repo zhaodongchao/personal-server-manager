@@ -130,7 +130,13 @@ public enum ErrorCode {
     TOOLS_JWT_PAYLOAD_INVALID(7011, "Payload 不是合法的 JSON 对象"),
     TOOLS_JWT_ALG_UNSUPPORTED(7012, "不支持的 JWT 算法（或本工具不提供该算法的签发）"),
     TOOLS_JWT_KEY_INVALID(7013, "JWT 密钥不合法（PEM / JWK 解析失败或与算法不匹配）"),
-    TOOLS_JWT_SIGN_FAILED(7014, "JWT 签名失败");
+    TOOLS_JWT_SIGN_FAILED(7014, "JWT 签名失败"),
+    // ===== ID 生成器（server-tools）=====
+    TOOLS_ID_SCHEME_UNSUPPORTED(7015, "不支持的 ID 生成方案"),
+    TOOLS_ID_COUNT_INVALID(7016, "生成数量不合法（1~1000）"),
+    TOOLS_ID_PARAM_INVALID(7017, "ID 生成参数不合法（起始值、步长、机器号等）"),
+    TOOLS_ID_VALUE_INVALID(7018, "不是该方案生成的合法 ID（长度、进制或版本位不符）"),
+    TOOLS_ID_CLOCK_BACKWARD(7019, "检测到时钟回拨，已按策略拒绝生成（雪花类 ID 的核心风险）");
 
     private final int code;
     private final String message;

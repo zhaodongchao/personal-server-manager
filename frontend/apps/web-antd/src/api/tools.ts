@@ -200,6 +200,119 @@ export namespace ToolsApi {
     header: string;
     algorithm: string;
   }
+
+  /** ID 位段定义（用于画 64bit 分段条） */
+  export interface IdSegment {
+    name: string;
+    width: number;
+    /** SIGN / TIME / MACHINE / SEQ / RANDOM / VERSION / VARIANT / COUNTER */
+    role: string;
+    note?: null | string;
+  }
+
+  /** ID 方案参数定义（由服务端下发，界面按此渲染表单） */
+  export interface IdParam {
+    name: string;
+    label: string;
+    /** number / text / switch / select */
+    type: string;
+    required: boolean;
+    def?: null | string;
+    help?: null | string;
+    min?: null | number;
+    max?: null | number;
+    options?: null | Option[];
+  }
+
+  /** 一种 ID 生成方案 */
+  export interface IdScheme {
+    value: string;
+    label: string;
+    group: string;
+    groupLabel: string;
+    bits: string;
+    totalBits: number;
+    /** NUMBER / UUID / HEX */
+    shape: string;
+    ordered: string;
+    generator: string;
+    note: string;
+    pros: string[];
+    cons: string[];
+    segments: IdSegment[];
+    params: IdParam[];
+    sample: string;
+    timeBased: boolean;
+    distributed: boolean;
+  }
+
+  /** ID 生成器可选清单 */
+  export interface IdOptions {
+    schemes: IdScheme[];
+    groups: Option[];
+    maxCount: number;
+    segLimit: number;
+  }
+
+  /** ID 生成请求体 */
+  export interface IdGenerateBody {
+    scheme: string;
+    count: number;
+    params: Record<string, string>;
+  }
+
+  /** 单条生成结果 */
+  export interface IdItem {
+    index: number;
+    value: string;
+    hex?: null | string;
+    time?: null | string;
+    extra?: null | string;
+    segValues?: null | string[];
+  }
+
+  /** ID 生成结果 */
+  export interface IdGenerateResult {
+    scheme: string;
+    label: string;
+    group: string;
+    groupLabel: string;
+    bits: string;
+    totalBits: number;
+    shape: string;
+    ordered: string;
+    generator: string;
+    count: number;
+    ids: IdItem[];
+    segments: IdSegment[];
+    segValuesIncluded: boolean;
+    segLimit: number;
+    notes: string[];
+    warnings: string[];
+    elapsedMs: number;
+  }
+
+  /** ID 反解请求体 */
+  export interface IdDecodeBody {
+    scheme: string;
+    value: string;
+    /** 时间基准（毫秒），雪花类反解需要 */
+    epoch?: null | number;
+  }
+
+  /** ID 反解结果 */
+  export interface IdDecodeResult {
+    scheme: string;
+    label: string;
+    value: string;
+    hex?: null | string;
+    time?: null | string;
+    segments: IdSegment[];
+    segValues?: null | string[];
+    facts: string[];
+    valid: boolean;
+    reason: string;
+  }
 }
 
 /** JWT 工具可选清单 */
@@ -215,4 +328,19 @@ export function verifyJwtApi(data: ToolsApi.JwtVerifyBody) {
 /** 签发 JWT（产出可直接使用的凭据，审计按 risky 标记） */
 export function signJwtApi(data: ToolsApi.JwtSignBody) {
   return requestClient.post<ToolsApi.JwtSignResult>('/tools/jwt/sign', data);
+}
+
+/** ID 生成器方案清单（含位分配、参数定义、优缺点） */
+export function getIdOptionsApi() {
+  return requestClient.get<ToolsApi.IdOptions>('/tools/id/options');
+}
+
+/** 按方案生成一批 ID（入参不含凭据，审计保留入参记录） */
+export function generateIdsApi(data: ToolsApi.IdGenerateBody) {
+  return requestClient.post<ToolsApi.IdGenerateResult>('/tools/id/generate', data);
+}
+
+/** 反解一个已有 ID：拆位段、还原生成时间 */
+export function decodeIdApi(data: ToolsApi.IdDecodeBody) {
+  return requestClient.post<ToolsApi.IdDecodeResult>('/tools/id/decode', data);
 }
