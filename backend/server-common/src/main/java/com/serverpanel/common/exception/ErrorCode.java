@@ -135,7 +135,7 @@ public enum ErrorCode {
     TOOLS_ID_SCHEME_UNSUPPORTED(7015, "不支持的 ID 生成方案"),
     TOOLS_ID_COUNT_INVALID(7016, "生成数量不合法（1~1000）"),
     TOOLS_ID_PARAM_INVALID(7017, "ID 生成参数不合法（起始值、步长、机器号等）"),
-    TOOLS_ID_VALUE_INVALID(7018, "不是该方案生成的合法 ID（长度、进制或版本位不符）"),
+    TOOLS_ID_VALUE_INVALID(7018, "待反解的 ID 不合法（为空或超长）"),
     TOOLS_ID_CLOCK_BACKWARD(7019, "检测到时钟回拨，已按策略拒绝生成（雪花类 ID 的核心风险）");
 
     private final int code;
