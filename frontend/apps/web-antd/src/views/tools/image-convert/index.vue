@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ToolsApi } from '#/api/tools';
 
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 
 import { useAccess } from '@vben/access';
 import { Page } from '@vben/common-ui';
@@ -33,8 +33,26 @@ const formats = computed(() => options.value?.formats ?? []);
 const limits = computed(() => options.value?.limits);
 const optionsLoading = ref(false);
 
+/**
+ * 待转换文件条目：在原始 File 之上补充缩略图 URL 与探测出的像素尺寸，
+ * 便于上传前直观确认「到底加了哪些图、各是什么规格」。
+ */
+interface PendingItem {
+  file: File;
+  height?: number;
+  uid: string;
+  url: string;
+  width?: number;
+}
+
 // ===== 待转换文件 =====
-const pendingFiles = ref<File[]>([]);
+const pendingItems = ref<PendingItem[]>([]);
+let uidCounter = 0;
+
+/** 已添加文件的总体积 */
+const totalBytes = computed(() =>
+  pendingItems.value.reduce((sum, item) => sum + item.file.size, 0),
+);
 
 // ===== 转换参数 =====
 const targetFormat = ref<string>();
@@ -77,20 +95,66 @@ function limitText() {
   return `单个 ≤ ${formatSize(l.maxFileBytes)} · 最多 ${l.maxFiles} 张 · 总量 ≤ ${formatSize(l.maxTotalBytes)}`;
 }
 
-/** 手动收集文件（返回 false 阻止组件自动上传） */
+/** 从 MIME 或扩展名推断格式标签（如 PNG / JPEG），识别不出返回「未知」 */
+function formatType(file: File) {
+  const mime = file.type.split('/')[1]?.toUpperCase();
+  if (mime && mime !== 'JPEG' && mime !== 'JPG') return mime;
+  if (mime) return 'JPEG';
+  const ext = file.name.split('.').pop()?.toUpperCase();
+  if (!ext) return '未知';
+  if (ext === 'JPG' || ext === 'JPEG') return 'JPEG';
+  if (ext === 'TIF') return 'TIFF';
+  return ext;
+}
+
+/** 异步探测图片像素尺寸（onload 后回写，卡片自动刷新） */
+function probeSize(item: PendingItem) {
+  const img = new Image();
+  img.onload = () => {
+    item.width = img.naturalWidth;
+    item.height = img.naturalHeight;
+  };
+  img.src = item.url;
+}
+
+/** 手动收集文件（返回 false 阻止组件自动上传），同时做张数与单文件体积拦截 */
 function onBeforeUpload(file: File) {
   const l = limits.value;
-  if (l && pendingFiles.value.length >= l.maxFiles) {
+  if (l && pendingItems.value.length >= l.maxFiles) {
     message.warning(`单次最多 ${l.maxFiles} 个文件`);
     return false;
   }
-  pendingFiles.value.push(file);
+  if (l && file.size > l.maxFileBytes) {
+    message.warning(`「${file.name}」超过单文件上限 ${formatSize(l.maxFileBytes)}，已跳过`);
+    return false;
+  }
+  const item: PendingItem = {
+    file,
+    uid: `img-${Date.now()}-${uidCounter++}`,
+    url: URL.createObjectURL(file),
+  };
+  pendingItems.value.push(item);
+  probeSize(item);
   return false;
 }
 
 function removeFile(index: number) {
-  pendingFiles.value.splice(index, 1);
+  const [item] = pendingItems.value.splice(index, 1);
+  if (item) {
+    URL.revokeObjectURL(item.url);
+  }
 }
+
+function clearFiles() {
+  for (const item of pendingItems.value) {
+    URL.revokeObjectURL(item.url);
+  }
+  pendingItems.value = [];
+}
+
+onUnmounted(() => {
+  clearFiles();
+});
 
 async function fetchOptions() {
   optionsLoading.value = true;
@@ -107,7 +171,7 @@ async function fetchOptions() {
 
 function validateParams(): string | undefined {
   if (!targetFormat.value) return '请选择目标格式';
-  if (pendingFiles.value.length === 0) return '请先添加图片文件';
+  if (pendingItems.value.length === 0) return '请先添加图片文件';
   const l = limits.value;
   if (resizeMode.value === 'percent' && l) {
     if (percent.value < l.minPercent || percent.value > l.maxPercent) {
@@ -146,16 +210,19 @@ async function handleConvert() {
   converting.value = true;
   results.value = [];
   try {
-    results.value = await convertImagesApi(pendingFiles.value, {
-      targetFormat: targetFormat.value!,
-      resizeMode: resizeMode.value,
-      percent: resizeMode.value === 'percent' ? percent.value : undefined,
-      width: resizeMode.value === 'dimension' ? width.value : undefined,
-      height: resizeMode.value === 'dimension' ? height.value : undefined,
-      longEdge: resizeMode.value === 'longEdge' ? longEdge.value : undefined,
-      keepRatio: keepRatio.value,
-      quality: qualityEnabled.value ? quality.value : undefined,
-    });
+    results.value = await convertImagesApi(
+      pendingItems.value.map((item) => item.file),
+      {
+        targetFormat: targetFormat.value!,
+        resizeMode: resizeMode.value,
+        percent: resizeMode.value === 'percent' ? percent.value : undefined,
+        width: resizeMode.value === 'dimension' ? width.value : undefined,
+        height: resizeMode.value === 'dimension' ? height.value : undefined,
+        longEdge: resizeMode.value === 'longEdge' ? longEdge.value : undefined,
+        keepRatio: keepRatio.value,
+        quality: qualityEnabled.value ? quality.value : undefined,
+      },
+    );
     const ok = results.value.filter((r) => r.success).length;
     const fail = results.value.length - ok;
     if (fail === 0) {
@@ -197,22 +264,60 @@ onMounted(() => {
         <p class="py-2 text-base">点击或拖拽图片到此处</p>
         <p class="text-xs text-gray-400">可多选，支持 {{ acceptTypes }}</p>
       </Upload.Dragger>
-      <div v-if="pendingFiles.length > 0" class="mt-3 flex flex-wrap gap-2">
-        <span
-          v-for="(file, index) in pendingFiles"
-          :key="`${file.name}-${index}`"
-          class="inline-flex items-center gap-2 rounded border border-gray-200 px-2 py-1 text-xs dark:border-gray-600"
-        >
-          {{ file.name }}
-          <span class="text-gray-400">{{ formatSize(file.size) }}</span>
-          <button
-            type="button"
-            class="cursor-pointer text-red-500 hover:text-red-700"
-            @click="removeFile(index)"
+      <div v-if="pendingItems.length > 0" class="mt-3">
+        <div class="mb-2 flex items-center justify-between">
+          <span class="text-xs text-gray-500">
+            已添加 {{ pendingItems.length }} 张，共 {{ formatSize(totalBytes) }}
+          </span>
+          <Button size="small" danger type="text" @click="clearFiles">
+            清空全部
+          </Button>
+        </div>
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+          <div
+            v-for="(item, index) in pendingItems"
+            :key="item.uid"
+            class="relative rounded-lg border border-gray-200 p-2 transition hover:border-blue-400 dark:border-gray-600 dark:hover:border-blue-500"
           >
-            ×
-          </button>
-        </span>
+            <!-- 缩略图（棋盘格底，透明图可见） -->
+            <div
+              class="flex h-32 items-center justify-center rounded bg-[repeating-conic-gradient(#f0f0f0_0%_25%,white_0%_50%)] bg-[length:16px_16px] dark:bg-[repeating-conic-gradient(#374151_0%_25%,#1f2937_0%_50%)]"
+            >
+              <img
+                :src="item.url"
+                :alt="item.file.name"
+                class="max-h-28 max-w-full object-contain"
+              />
+            </div>
+            <!-- 文件信息 -->
+            <div class="mt-2 space-y-0.5">
+              <div
+                class="truncate text-xs font-medium"
+                :title="item.file.name"
+              >
+                {{ item.file.name }}
+              </div>
+              <div class="text-xs text-gray-400">
+                {{ formatType(item.file) }} · {{ formatSize(item.file.size) }}
+                <template v-if="item.width">
+                  · {{ item.width }} × {{ item.height }} px
+                </template>
+                <template v-else>
+                  · 尺寸识别中…
+                </template>
+              </div>
+            </div>
+            <!-- 移除按钮 -->
+            <button
+              type="button"
+              title="移除该图片"
+              class="absolute right-1 top-1 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full bg-white/80 text-sm leading-none text-gray-500 shadow-sm transition hover:bg-red-500 hover:text-white dark:bg-gray-900/80"
+              @click="removeFile(index)"
+            >
+              ×
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
