@@ -45,6 +45,8 @@
     <commons-compress.version>1.28.0</commons-compress.version>
     <ip2region.version>2.7.0</ip2region.version>
     <zxing.version>3.5.3</zxing.version>
+    <!-- 图片格式转换（ImageIO 扩展插件：增强 JPEG 读取 + TIFF/WebP 支持） -->
+    <twelvemonkeys.version>3.12.0</twelvemonkeys.version>
     <spotless.version>3.10.2</spotless.version>
   </properties>
 
@@ -181,6 +183,22 @@
             <artifactId>jai-imageio-core</artifactId>
           </exclusion>
         </exclusions>
+      </dependency>
+      <!-- 图片格式转换：ImageIO SPI 自动注册，覆盖 CMYK JPEG / TIFF / WebP 读写 -->
+      <dependency>
+        <groupId>com.twelvemonkeys.imageio</groupId>
+        <artifactId>imageio-jpeg</artifactId>
+        <version>${twelvemonkeys.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.twelvemonkeys.imageio</groupId>
+        <artifactId>imageio-tiff</artifactId>
+        <version>${twelvemonkeys.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.twelvemonkeys.imageio</groupId>
+        <artifactId>imageio-webp</artifactId>
+        <version>${twelvemonkeys.version}</version>
       </dependency>
     </dependencies>
   </dependencyManagement>

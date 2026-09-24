@@ -158,7 +158,14 @@ public enum ErrorCode {
     TOOLS_REGEX_FLAGS_INVALID(7034, "正则标志不合法（仅允许 i m s x u 的组合，且不重复）"),
     TOOLS_REGEX_TEMPLATE_NOT_FOUND(7035, "正则模板不存在或已被删除"),
     TOOLS_REGEX_TEMPLATE_NAME_DUPLICATED(7036, "模板名称已存在，请换一个名称"),
-    TOOLS_REGEX_TEMPLATE_INVALID(7037, "模板内容不合法（名称/正则为空或超长）");
+    TOOLS_REGEX_TEMPLATE_INVALID(7037, "模板内容不合法（名称/正则为空或超长）"),
+    // ===== 图片转换工具（server-tools）=====
+    TOOLS_IMG_FILE_TOO_LARGE(7038, "单个图片文件过大，超出处理上限"),
+    TOOLS_IMG_FILE_INVALID(7039, "文件不是合法的图片（或格式超出支持范围）"),
+    TOOLS_IMG_FORMAT_UNSUPPORTED(7040, "不支持的图片目标格式"),
+    TOOLS_IMG_BATCH_TOO_MANY(7041, "单次转换的图片数量超出上限"),
+    TOOLS_IMG_CONVERT_FAILED(7042, "图片转换失败（编码阶段出错）"),
+    TOOLS_IMG_PARAM_INVALID(7043, "转换参数不合法（缩放尺寸/质量等超出范围）");
 
     private final int code;
     private final String message;

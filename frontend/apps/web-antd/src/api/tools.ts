@@ -621,3 +621,95 @@ export function updateRegexTemplateApi(
 export function deleteRegexTemplateApi(id: string) {
   return requestClient.delete<void>(`/tools/regex/template/${id}`);
 }
+
+// ===== 图片转换工具 =====
+
+export namespace ToolsApi {
+  /** 图片格式描述 */
+  export interface ImageFormat {
+    format: string;
+    ext: string;
+    mime: string;
+    lossless: boolean;
+    qualitySupported: boolean;
+    alphaSupported: boolean;
+    note: string;
+  }
+
+  /** 图片转换各项上限 */
+  export interface ImageLimits {
+    maxFiles: number;
+    maxFileBytes: number;
+    maxTotalBytes: number;
+    minSide: number;
+    maxSide: number;
+    minQuality: number;
+    maxQuality: number;
+    minPercent: number;
+    maxPercent: number;
+  }
+
+  /** 图片转换 options 响应 */
+  export interface ImageConvertOptions {
+    formats: ImageFormat[];
+    limits: ImageLimits;
+    notes: string[];
+  }
+
+  /** 单个文件的转换结果（失败项 success=false + error） */
+  export interface ImageConvertResult {
+    sourceName: string;
+    sourceFormat: null | string;
+    targetFormat: string;
+    outputName: string;
+    sizeBefore: number;
+    sizeAfter: number;
+    width: number;
+    height: number;
+    resized: boolean;
+    dataUrl: string;
+    success: boolean;
+    error: null | string;
+  }
+}
+
+/** 图片转换 options：格式清单 + 上限 + 说明 */
+export function getImageConvertOptionsApi() {
+  return requestClient.get<ToolsApi.ImageConvertOptions>(
+    '/tools/image-convert/options',
+  );
+}
+
+/** 批量图片转换（multipart 表单，文件字段 files） */
+export function convertImagesApi(
+  files: File[],
+  params: {
+    targetFormat: string;
+    resizeMode?: string;
+    percent?: number;
+    width?: number;
+    height?: number;
+    longEdge?: number;
+    keepRatio?: boolean;
+    quality?: number;
+  },
+) {
+  const form = new FormData();
+  files.forEach((file) => form.append('files', file));
+  form.append('targetFormat', params.targetFormat);
+  form.append('resizeMode', params.resizeMode ?? 'none');
+  if (params.percent !== undefined) form.append('percent', String(params.percent));
+  if (params.width !== undefined) form.append('width', String(params.width));
+  if (params.height !== undefined) form.append('height', String(params.height));
+  if (params.longEdge !== undefined) {
+    form.append('longEdge', String(params.longEdge));
+  }
+  form.append('keepRatio', String(params.keepRatio ?? true));
+  if (params.quality !== undefined) {
+    form.append('quality', String(params.quality));
+  }
+  return requestClient.post<ToolsApi.ImageConvertResult[]>(
+    '/tools/image-convert/convert',
+    form,
+  );
+}
