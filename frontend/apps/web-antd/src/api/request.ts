@@ -68,6 +68,15 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
 
       config.headers.Authorization = formatToken(accessStore.accessToken);
       config.headers['Accept-Language'] = preferences.app.locale;
+      // axios ≥1.19 行为变更：本客户端默认的 JSON Content-Type 会让
+      // transformRequest 把 FormData JSON 序列化（formDataToJSON），
+      // 后端收到的是 application/json 而非 multipart（报
+      // "Current request is not a multipart request"）。
+      // FormData 请求移除 Content-Type，交由浏览器自动生成
+      // 带 boundary 的 multipart/form-data（即旧版 axios 的行为）。
+      if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+        delete config.headers['Content-Type'];
+      }
       return config;
     },
   });
