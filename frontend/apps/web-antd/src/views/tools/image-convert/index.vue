@@ -254,69 +254,79 @@ onMounted(() => {
         <h3 class="text-base font-medium">1. 选择图片</h3>
         <span class="text-xs text-gray-400">{{ limitText() }}</span>
       </div>
-      <Upload.Dragger
-        accept="image/*"
-        multiple
-        :show-upload-list="false"
-        :before-upload="onBeforeUpload"
-        :disabled="!canConvert"
-      >
-        <p class="py-2 text-base">点击或拖拽图片到此处</p>
-        <p class="text-xs text-gray-400">可多选，支持 {{ acceptTypes }}</p>
-      </Upload.Dragger>
-      <div v-if="pendingItems.length > 0" class="mt-3">
-        <div class="mb-2 flex items-center justify-between">
-          <span class="text-xs text-gray-500">
-            已添加 {{ pendingItems.length }} 张，共 {{ formatSize(totalBytes) }}
+      <div class="flex flex-wrap items-center gap-3">
+        <Upload
+          accept="image/*"
+          multiple
+          :show-upload-list="false"
+          :before-upload="onBeforeUpload"
+          :disabled="!canConvert"
+        >
+          <Button type="primary" ghost>选择图片</Button>
+        </Upload>
+        <span class="text-xs text-gray-400">可多选，支持 {{ acceptTypes }}</span>
+      </div>
+    </div>
+
+    <!-- 已选图片预览（独立区块，位于第一步下方、转换参数之前） -->
+    <div
+      v-if="pendingItems.length > 0"
+      class="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900"
+    >
+      <div class="mb-3 flex items-center justify-between">
+        <h3 class="text-base font-medium">
+          已选图片
+          <span class="ml-2 text-xs font-normal text-gray-400">
+            {{ pendingItems.length }} 张 · 共 {{ formatSize(totalBytes) }}
           </span>
-          <Button size="small" danger type="text" @click="clearFiles">
-            清空全部
-          </Button>
-        </div>
-        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+        </h3>
+        <Button size="small" danger type="text" @click="clearFiles">
+          清空全部
+        </Button>
+      </div>
+      <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+        <div
+          v-for="(item, index) in pendingItems"
+          :key="item.uid"
+          class="relative rounded-lg border border-gray-200 p-2 transition hover:border-blue-400 dark:border-gray-600 dark:hover:border-blue-500"
+        >
+          <!-- 缩略图（棋盘格底，透明图可见） -->
           <div
-            v-for="(item, index) in pendingItems"
-            :key="item.uid"
-            class="relative rounded-lg border border-gray-200 p-2 transition hover:border-blue-400 dark:border-gray-600 dark:hover:border-blue-500"
+            class="flex h-32 items-center justify-center rounded bg-[repeating-conic-gradient(#f0f0f0_0%_25%,white_0%_50%)] bg-[length:16px_16px] dark:bg-[repeating-conic-gradient(#374151_0%_25%,#1f2937_0%_50%)]"
           >
-            <!-- 缩略图（棋盘格底，透明图可见） -->
-            <div
-              class="flex h-32 items-center justify-center rounded bg-[repeating-conic-gradient(#f0f0f0_0%_25%,white_0%_50%)] bg-[length:16px_16px] dark:bg-[repeating-conic-gradient(#374151_0%_25%,#1f2937_0%_50%)]"
-            >
-              <img
-                :src="item.url"
-                :alt="item.file.name"
-                class="max-h-28 max-w-full object-contain"
-              />
-            </div>
-            <!-- 文件信息 -->
-            <div class="mt-2 space-y-0.5">
-              <div
-                class="truncate text-xs font-medium"
-                :title="item.file.name"
-              >
-                {{ item.file.name }}
-              </div>
-              <div class="text-xs text-gray-400">
-                {{ formatType(item.file) }} · {{ formatSize(item.file.size) }}
-                <template v-if="item.width">
-                  · {{ item.width }} × {{ item.height }} px
-                </template>
-                <template v-else>
-                  · 尺寸识别中…
-                </template>
-              </div>
-            </div>
-            <!-- 移除按钮 -->
-            <button
-              type="button"
-              title="移除该图片"
-              class="absolute right-1 top-1 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full bg-white/80 text-sm leading-none text-gray-500 shadow-sm transition hover:bg-red-500 hover:text-white dark:bg-gray-900/80"
-              @click="removeFile(index)"
-            >
-              ×
-            </button>
+            <img
+              :src="item.url"
+              :alt="item.file.name"
+              class="max-h-28 max-w-full object-contain"
+            />
           </div>
+          <!-- 文件信息 -->
+          <div class="mt-2 space-y-0.5">
+            <div
+              class="truncate text-xs font-medium"
+              :title="item.file.name"
+            >
+              {{ item.file.name }}
+            </div>
+            <div class="text-xs text-gray-400">
+              {{ formatType(item.file) }} · {{ formatSize(item.file.size) }}
+              <template v-if="item.width">
+                · {{ item.width }} × {{ item.height }} px
+              </template>
+              <template v-else>
+                · 尺寸识别中…
+              </template>
+            </div>
+          </div>
+          <!-- 移除按钮 -->
+          <button
+            type="button"
+            title="移除该图片"
+            class="absolute right-1 top-1 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full bg-white/80 text-sm leading-none text-gray-500 shadow-sm transition hover:bg-red-500 hover:text-white dark:bg-gray-900/80"
+            @click="removeFile(index)"
+          >
+            ×
+          </button>
         </div>
       </div>
     </div>
