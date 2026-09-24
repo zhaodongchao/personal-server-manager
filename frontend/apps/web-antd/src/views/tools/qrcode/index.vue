@@ -8,7 +8,6 @@ import {
   Alert,
   Button,
   Card,
-  ColorPicker,
   Input,
   InputNumber,
   Radio,
@@ -348,16 +347,29 @@ function fieldOptions(field: ToolsApi.Field) {
             <div class="flex items-end gap-3">
               <div>
                 <div class="mb-1 text-xs text-gray-500">前景色</div>
-                <ColorPicker v-model:value="fgColor" />
+                <input
+                  v-model="fgColor"
+                  class="h-8 w-12 cursor-pointer rounded border border-gray-300"
+                  type="color"
+                />
               </div>
               <div>
                 <div class="mb-1 text-xs text-gray-500">背景色</div>
-                <ColorPicker v-model:value="bgColor" />
+                <input
+                  v-model="bgColor"
+                  class="h-8 w-12 cursor-pointer rounded border border-gray-300"
+                  type="color"
+                />
               </div>
               <div class="flex items-center gap-1 pb-1">
                 <Switch v-model:checked="gradientOn" size="small" />
                 <span class="text-xs text-gray-500">渐变</span>
-                <ColorPicker v-if="gradientOn" v-model:value="gradientColor" />
+                <input
+                  v-if="gradientOn"
+                  v-model="gradientColor"
+                  class="h-8 w-12 cursor-pointer rounded border border-gray-300"
+                  type="color"
+                />
               </div>
             </div>
 
