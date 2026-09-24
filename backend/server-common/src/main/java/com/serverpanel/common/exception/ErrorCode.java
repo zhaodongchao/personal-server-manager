@@ -149,7 +149,16 @@ public enum ErrorCode {
     TOOLS_QR_CONTENT_TOO_LARGE(7026, "二维码内容过长，超出该容错等级与字符集的最大容量"),
     TOOLS_QR_CONTENT_UNSUPPORTED(7027, "不支持的二维码内容类型"),
     TOOLS_QR_IMAGE_INVALID(7028, "Logo 或待识别的图片不是合法的图片（支持 PNG / JPEG / GIF）"),
-    TOOLS_QR_ENCODE_FAILED(7029, "二维码生成失败（内容可能超出容量或含无法编码的字符）");
+    TOOLS_QR_ENCODE_FAILED(7029, "二维码生成失败（内容可能超出容量或含无法编码的字符）"),
+    // ===== 正则工具（server-tools）=====
+    TOOLS_REGEX_SCENARIO_UNSUPPORTED(7030, "不支持的正则生成场景"),
+    TOOLS_REGEX_PARAM_INVALID(7031, "正则生成参数不合法"),
+    TOOLS_REGEX_PATTERN_TOO_LARGE(7032, "正则表达式过长，超出单次处理上限"),
+    TOOLS_REGEX_TEXT_TOO_LARGE(7033, "待匹配文本过长，超出单次处理上限"),
+    TOOLS_REGEX_FLAGS_INVALID(7034, "正则标志不合法（仅允许 i m s x u 的组合，且不重复）"),
+    TOOLS_REGEX_TEMPLATE_NOT_FOUND(7035, "正则模板不存在或已被删除"),
+    TOOLS_REGEX_TEMPLATE_NAME_DUPLICATED(7036, "模板名称已存在，请换一个名称"),
+    TOOLS_REGEX_TEMPLATE_INVALID(7037, "模板内容不合法（名称/正则为空或超长）");
 
     private final int code;
     private final String message;

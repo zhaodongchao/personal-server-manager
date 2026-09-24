@@ -446,3 +446,178 @@ export function decodeQrcodeApi(data: ToolsApi.QrcodeDecodeBody) {
     data,
   );
 }
+
+// ---------------- 正则工具 ----------------
+
+export namespace ToolsApi {
+  /** 正则生成场景（schema 驱动，同二维码内容类型模式） */
+  export interface RegexScenario {
+    value: string;
+    label: string;
+    desc: string;
+    fields: Field[];
+  }
+
+  /** 正则标志（i / m / s / x / u） */
+  export interface RegexFlag {
+    value: string;
+    label: string;
+    desc: string;
+  }
+
+  /** 正则工具各项处理上限 */
+  export interface RegexOptions {
+    scenarios: RegexScenario[];
+    flags: RegexFlag[];
+    maxPatternLength: number;
+    maxTestTextLength: number;
+    maxMatches: number;
+    maxTemplateCount: number;
+  }
+
+  export interface RegexGenerateBody {
+    scenario: string;
+    /** 按场景而定的参数，字段定义见 options.scenarios[].fields */
+    params: Record<string, string>;
+    flags?: string;
+  }
+
+  export interface RegexGenerateResult {
+    pattern: string;
+    flags: string;
+    /** 逐段中文说明（每行对应模式的一个组成段） */
+    explanation: string[];
+    /** 能匹配该模式的示例文本（可直接「填入测试」验证） */
+    samples: string[];
+    notes: string[];
+  }
+
+  export interface RegexTestBody {
+    pattern: string;
+    flags?: string;
+    text: string;
+    /** 非空时返回替换预览，支持 $1 / ${name} 组引用 */
+    replacement?: null | string;
+  }
+
+  /** 捕获组取值 */
+  export interface RegexGroup {
+    index: number;
+    /** 命名组的名称（非命名组为 null） */
+    name?: null | string;
+    /** 组未参与匹配时为 null */
+    value?: null | string;
+  }
+
+  export interface RegexMatch {
+    index: number;
+    end: number;
+    text: string;
+    /** 第 0 项为整体匹配 */
+    groups: RegexGroup[];
+  }
+
+  /** 结构解析出的一个片段 */
+  export interface RegexToken {
+    token: string;
+    /** literal / charClass / quantifier / group / groupEnd / anchor / alternation / dot */
+    type: string;
+    /** 嵌套深度（分组内 +1），用于缩进展示 */
+    depth: number;
+    desc: string;
+  }
+
+  export interface RegexTestResult {
+    valid: boolean;
+    errorMessage?: null | string;
+    flagsApplied: string;
+    matchCount: number;
+    /** 是否因超过单次返回上限被截断 */
+    truncated: boolean;
+    matches: RegexMatch[];
+    structure: RegexToken[];
+    replacementPreview?: null | string;
+  }
+
+  /** 正则模板（全局共享） */
+  export interface RegexTemplate {
+    id: string;
+    name: string;
+    pattern: string;
+    flags: string;
+    category: string;
+    description?: null | string;
+    sample?: null | string;
+    sort: number;
+    createdAt?: null | string;
+    updatedAt?: null | string;
+  }
+
+  export interface RegexTemplateBody {
+    name: string;
+    pattern: string;
+    flags?: string;
+    category?: string;
+    description?: string;
+    sample?: string;
+    sort?: number;
+  }
+}
+
+/** 正则工具可选清单（场景、标志与各项上限） */
+export function getRegexOptionsApi() {
+  return requestClient.get<ToolsApi.RegexOptions>('/tools/regex/options');
+}
+
+/** 按场景 + 参数生成正则（含逐段说明与示例） */
+export function generateRegexApi(data: ToolsApi.RegexGenerateBody) {
+  return requestClient.post<ToolsApi.RegexGenerateResult>(
+    '/tools/regex/generate',
+    data,
+  );
+}
+
+/** 测试/解析正则（语法错误不算接口错误，返回 valid=false + 中文原因） */
+export function testRegexApi(data: ToolsApi.RegexTestBody) {
+  return requestClient.post<ToolsApi.RegexTestResult>('/tools/regex/test', data);
+}
+
+/** 正则模板分页（管理 Tab 用） */
+export function getRegexTemplatePageApi(params: {
+  category?: string;
+  keyword?: string;
+  pageNum: number;
+  pageSize: number;
+}) {
+  return requestClient.get<{
+    records: ToolsApi.RegexTemplate[];
+    pageNum: number;
+    pageSize: number;
+    total: number;
+  }>('/tools/regex/template/page', { params });
+}
+
+/** 正则模板全量列表（测试 Tab 下拉联动用，按 sort、name 排序） */
+export function getRegexTemplateListApi() {
+  return requestClient.get<ToolsApi.RegexTemplate[]>(
+    '/tools/regex/template/list',
+  );
+}
+
+/** 新增正则模板 */
+export function createRegexTemplateApi(data: ToolsApi.RegexTemplateBody) {
+  return requestClient.post<void>('/tools/regex/template', data);
+}
+
+/** 编辑正则模板 */
+export function updateRegexTemplateApi(
+  id: string,
+  data: ToolsApi.RegexTemplateBody,
+) {
+  return requestClient.put<void>(`/tools/regex/template/${id}`, data);
+}
+
+/** 删除正则模板 */
+export function deleteRegexTemplateApi(id: string) {
+  return requestClient.delete<void>(`/tools/regex/template/${id}`);
+}
