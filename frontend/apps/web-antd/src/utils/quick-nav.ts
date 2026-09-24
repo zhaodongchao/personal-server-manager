@@ -5,8 +5,8 @@
  * <ul>
  *   <li>协议：https=1 走 https，否则 http；</li>
  *   <li>主机：domain 留空时跟随面板当前访问域名（浏览器 hostname）；</li>
- *   <li>端口：port<=0 不拼；配了域名时跳过协议默认端口（http 80 / https 443），
- *       免得https 站点被拼出 xxx:443 这种多余端口；域名自带端口时不重复拼。</li>
+ *   <li>端口：port<=0 不拼；端口等于协议默认端口（http 80 / https 443）时一律省略，
+ *       不区分是否配置域名，避免拼出 xxx:80 / xxx:443 这类冗余端口；域名自带端口时不重复拼。</li>
  *   <li>路径：path 保证以 / 开头，没有则补 ''。</li>
  * </ul>
  */
@@ -34,8 +34,8 @@ export function quickNavUrl(item: QuickNavTarget): string {
 
   const port = item.port ?? -1;
   const defaultPort = https ? DEFAULT_PORT.https : DEFAULT_PORT.http;
-  // 没有配域名时沿用旧行为（面板域名 + 端口），配了域名则省掉协议默认端口
-  const needPort = port > 0 && (!domain || port !== defaultPort);
+  // 端口等于协议默认端口（http 80 / https 443）时省略，避免冗余（无论是否配置域名）
+  const needPort = port > 0 && port !== defaultPort;
   return `${scheme}://${host}${needPort ? `:${port}` : ''}${path}`;
 }
 
