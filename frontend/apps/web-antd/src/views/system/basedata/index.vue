@@ -247,7 +247,7 @@ function openPhoneEdit(row: BaseDataApi.PhoneSegment) {
     prefix: row.prefix,
     operator: row.operator,
     segType: row.segType,
-    note: row.note,
+    note: row.note ?? '',
   });
   phoneModal.value = true;
 }
@@ -342,10 +342,10 @@ function openBinEdit(row: BaseDataApi.BankBin) {
     id: row.id,
     bin: row.bin,
     bankName: row.bankName,
-    bankShort: row.bankShort,
+    bankShort: row.bankShort ?? '',
     cardType: row.cardType,
     cardLen: row.cardLen,
-    note: row.note,
+    note: row.note ?? '',
   });
   binModal.value = true;
 }
@@ -737,7 +737,7 @@ onMounted(async () => {
         </div>
         <div>
           <div class="mb-1 text-sm">备注</div>
-          <Input v-model:value="phoneForm.note ?? ''" placeholder="可选" />
+          <Input v-model:value="phoneForm.note" placeholder="可选" />
         </div>
       </div>
     </Modal>
@@ -759,7 +759,7 @@ onMounted(async () => {
         </div>
         <div>
           <div class="mb-1 text-sm">简称</div>
-          <Input v-model:value="binForm.bankShort ?? ''" placeholder="如 工行（可选）" />
+          <Input v-model:value="binForm.bankShort" placeholder="如 工行（可选）" />
         </div>
         <div class="flex gap-3">
           <div class="flex-1">
@@ -788,7 +788,7 @@ onMounted(async () => {
         </div>
         <div>
           <div class="mb-1 text-sm">备注</div>
-          <Input v-model:value="binForm.note ?? ''" placeholder="可选" />
+          <Input v-model:value="binForm.note" placeholder="可选" />
         </div>
       </div>
     </Modal>
