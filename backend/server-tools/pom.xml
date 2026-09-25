@@ -18,6 +18,16 @@
       <groupId>com.serverpanel</groupId>
       <artifactId>server-framework</artifactId>
     </dependency>
+    <!-- 基础数据：sys_config 数据源开关（SysConfigService） -->
+    <dependency>
+      <groupId>com.serverpanel</groupId>
+      <artifactId>server-system</artifactId>
+    </dependency>
+    <!-- 基础数据同步：复用调度中心的 JobHttpClient（SSRF 护栏 + maxBytes 上限） -->
+    <dependency>
+      <groupId>com.serverpanel</groupId>
+      <artifactId>server-appstack</artifactId>
+    </dependency>
     <!-- 二维码编解码（ZXing） -->
     <dependency>
       <groupId>com.google.zxing</groupId>

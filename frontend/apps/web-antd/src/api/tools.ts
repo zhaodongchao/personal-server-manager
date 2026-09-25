@@ -713,3 +713,61 @@ export function convertImagesApi(
     form,
   );
 }
+
+export namespace CertApi {
+  /** 构造规则条目 */
+  export interface RuleItem {
+    label: string;
+    desc: string;
+  }
+
+  /** 构造规则分组 */
+  export interface RuleSection {
+    title: string;
+    items: RuleItem[];
+  }
+
+  /** 单个证件类型 */
+  export interface CertType {
+    key: string;
+    name: string;
+    icon: string;
+    needRegion: boolean;
+    placeholder: string;
+    samples: string[];
+    rules: RuleSection[];
+  }
+
+  /** 证件解析 options 响应 */
+  export interface CertOptions {
+    types: CertType[];
+    limits: { maxValueLength: number; regionReady: boolean };
+  }
+
+  /** 结果字段行 */
+  export interface CertField {
+    label: string;
+    value: string;
+  }
+
+  /** 解析结果 */
+  export interface CertParseResult {
+    type: string;
+    valid: boolean;
+    level: 'ok' | 'warn' | 'error';
+    errors: string[];
+    warns: string[];
+    fields: CertField[];
+    extra: Record<string, Record<string, unknown>>;
+  }
+}
+
+/** 证件解析 options：类型清单 + 构造规则 + 上限 */
+export function getCertOptionsApi() {
+  return requestClient.get<CertApi.CertOptions>('/tools/cert/options');
+}
+
+/** 证件解析（业务失败返回 valid=false，不抛接口异常） */
+export function parseCertApi(data: { type: string; value: string }) {
+  return requestClient.post<CertApi.CertParseResult>('/tools/cert/parse', data);
+}

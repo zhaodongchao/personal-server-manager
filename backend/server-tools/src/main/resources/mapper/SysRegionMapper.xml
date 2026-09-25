@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.serverpanel.tools.mapper.SysRegionMapper">
+
+  <!-- 批量 UPSERT：按 code 唯一键存在则更新（不动 short_name），否则插入 -->
+  <insert id="batchUpsert">
+    INSERT INTO sys_region (id, code, name, short_name, level, parent_code, status)
+    VALUES
+    <foreach collection="list" item="item" separator=",">
+      (#{item.id}, #{item.code}, #{item.name}, #{item.shortName}, #{item.level},
+       #{item.parentCode}, #{item.status})
+    </foreach>
+    ON DUPLICATE KEY UPDATE
+      name        = VALUES(name),
+      level       = VALUES(level),
+      parent_code = VALUES(parent_code),
+      status      = VALUES(status)
+  </insert>
+
+</mapper>

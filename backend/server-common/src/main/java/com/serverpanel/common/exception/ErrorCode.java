@@ -165,7 +165,19 @@ public enum ErrorCode {
     TOOLS_IMG_FORMAT_UNSUPPORTED(7040, "不支持的图片目标格式"),
     TOOLS_IMG_BATCH_TOO_MANY(7041, "单次转换的图片数量超出上限"),
     TOOLS_IMG_CONVERT_FAILED(7042, "图片转换失败（编码阶段出错）"),
-    TOOLS_IMG_PARAM_INVALID(7043, "转换参数不合法（缩放尺寸/质量等超出范围）");
+    TOOLS_IMG_PARAM_INVALID(7043, "转换参数不合法（缩放尺寸/质量等超出范围）"),
+    // ===== 证件解析工具（server-tools）=====
+    TOOLS_CERT_TYPE_UNSUPPORTED(7044, "不支持的证件类型"),
+    TOOLS_CERT_VALUE_INVALID(7045, "证件号码为空或超出长度限制"),
+    TOOLS_CERT_PARSE_FAILED(7046, "证件号码解析失败（结构不合法）"),
+    TOOLS_CERT_REGION_NOT_READY(7047, "行政区划数据尚未同步，区划解析已降级"),
+    // ===== 基础数据管理（server-tools）=====
+    TOOLS_BD_SEGMENT_DUPLICATE(7048, "号段前缀已存在"),
+    TOOLS_BD_BIN_DUPLICATE(7049, "银行卡 BIN 已存在"),
+    TOOLS_BD_SYNC_SOURCE_UNREACHABLE(7050, "基础数据源不可达"),
+    TOOLS_BD_SYNC_FORMAT_INVALID(7051, "基础数据源格式异常，已中止（防误清空）"),
+    TOOLS_BD_SYNC_IN_PROGRESS(7052, "该类型同步正在进行中"),
+    TOOLS_BD_SYNC_TIMEOUT(7053, "基础数据同步超时");
 
     private final int code;
     private final String message;

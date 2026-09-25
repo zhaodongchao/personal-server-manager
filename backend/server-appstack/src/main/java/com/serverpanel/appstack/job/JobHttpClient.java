@@ -70,7 +70,7 @@ public class JobHttpClient {
     public record Response(int status, String body, long durationMs) {}
 
     /**
-     * 发起请求。
+     * 发起请求（默认 1MB 响应上限）。
      *
      * @param method      HTTP 方法
      * @param url         完整 URL
@@ -81,6 +81,20 @@ public class JobHttpClient {
      */
     public Response send(String method, String url, Map<String, String> headers,
                          String contentType, String body, int timeoutSec) {
+        return send(method, url, headers, contentType, body, timeoutSec, MAX_RESPONSE_BYTES);
+    }
+
+    /**
+     * 发起请求（自定义响应体上限）。
+     *
+     * <p>基础数据同步需要拉取街镇级区划 JSON（约 2-3MB），默认 1MB 上限不够，
+     * 故提供本重载；超限响应体被截断后由调用方按「格式异常」处理并中止同步，
+     * 不在本类里替调用方决定成败语义。
+     *
+     * @param maxBytes 响应体上限（字节）
+     */
+    public Response send(String method, String url, Map<String, String> headers,
+                         String contentType, String body, int timeoutSec, int maxBytes) {
         URI uri = validateUrl(url);
         long seconds = Math.min(Math.max(timeoutSec, 1), MAX_READ_TIMEOUT_SECONDS);
         HttpRequest.Builder builder = HttpRequest.newBuilder(uri)
@@ -107,8 +121,8 @@ public class JobHttpClient {
                     HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             long cost = System.currentTimeMillis() - started;
             String text = response.body();
-            if (text != null && text.getBytes(StandardCharsets.UTF_8).length > MAX_RESPONSE_BYTES) {
-                text = JobSupport.truncate(text, MAX_RESPONSE_BYTES);
+            if (text != null && text.getBytes(StandardCharsets.UTF_8).length > maxBytes) {
+                text = JobSupport.truncate(text, maxBytes);
             }
             return new Response(response.statusCode(), text, cost);
         } catch (IOException e) {

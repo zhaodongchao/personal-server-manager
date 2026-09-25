@@ -1,5 +1,6 @@
 export * from './core';
 export * from './appstack';
+export * from './base-data';
 export * from './dashboard';
 export * from './file';
 export * from './job';
