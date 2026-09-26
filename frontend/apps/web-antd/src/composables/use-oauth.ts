@@ -20,8 +20,17 @@ export function useOAuthProviders() {
     loading.value = true;
     try {
       providers.value = (await getOAuthProvidersApi()) ?? [];
-    } catch {
-      // 请求层已统一提示；此处退化为空列表 —— 未启用第三方登录时整块不渲染
+      if (providers.value.length === 0) {
+        // 界面表现与「接口失败」完全一致（整块消失），靠日志区分：
+        // 打出这一行 = 接口通了但没启用任何平台，去查 serverpanel.oauth.providers.* 的 client-id
+        console.info(
+          '[oauth] 后端未启用任何第三方平台（providers 返回空），第三方登录区块不渲染',
+        );
+      }
+    } catch (error) {
+      // 请求层已统一提示；此处退化为空列表 —— 未启用第三方登录时整块不渲染。
+      // 打出这一行 = 接口根本没通（后端未启动 / 代理未生效 / 500），与「未启用平台」区别对待
+      console.warn('[oauth] 拉取已启用平台列表失败，第三方登录区块不渲染：', error);
       providers.value = [];
     } finally {
       loading.value = false;

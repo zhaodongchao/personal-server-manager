@@ -35,7 +35,9 @@ async function loadBindings() {
   loading.value = true;
   try {
     bindings.value = (await getOAuthBindingsApi()) ?? [];
-  } catch {
+  } catch (error) {
+    // 与「尚未绑定任何平台」在界面上表现一致，靠日志区分是接口没通还是真的没绑
+    console.warn('[oauth] 拉取已绑定列表失败：', error);
     bindings.value = [];
   } finally {
     loading.value = false;
