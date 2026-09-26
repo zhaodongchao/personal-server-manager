@@ -47,6 +47,8 @@
     <zxing.version>3.5.3</zxing.version>
     <!-- 图片格式转换（ImageIO 扩展插件：增强 JPEG 读取 + TIFF/WebP 支持） -->
     <twelvemonkeys.version>3.12.0</twelvemonkeys.version>
+    <!-- 第三方 OAuth 登录客户端（纯 HTTP 库，无 Spring 依赖） -->
+    <justauth.version>1.16.7</justauth.version>
     <spotless.version>3.10.2</spotless.version>
   </properties>
 
@@ -183,6 +185,15 @@
             <artifactId>jai-imageio-core</artifactId>
           </exclusion>
         </exclusions>
+      </dependency>
+      <!-- 第三方 OAuth 登录客户端：纯 HTTP 库，无 Spring/Jackson 依赖，与 SB4 Jackson3 不冲突；
+           传递依赖 fastjson（仅解析 OAuth 平台固定 JSON 响应，autoType 默认关闭，风险可控）、
+           hutool-core、simple-http（自动探测 JDK11+ HttpClient，本项目 JDK21 自带，零额外 HTTP 依赖）；
+           MIT 协议 -->
+      <dependency>
+        <groupId>me.zhyd.oauth</groupId>
+        <artifactId>JustAuth</artifactId>
+        <version>${justauth.version}</version>
       </dependency>
       <!-- 图片格式转换：ImageIO SPI 自动注册，覆盖 CMYK JPEG / TIFF / WebP 读写 -->
       <dependency>

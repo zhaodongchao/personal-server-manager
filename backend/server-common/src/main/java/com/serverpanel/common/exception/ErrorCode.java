@@ -33,6 +33,14 @@ public enum ErrorCode {
     AUTH_USER_NOT_FOUND(1005, "用户不存在"),
     AUTH_SAFE_REQUIRED(1010, "敏感操作，请先完成二级认证"),
 
+    // ===== 认证 1xxx（OAuth 第三方登录 1020+） =====
+    AUTH_OAUTH_UNSUPPORTED(1020, "不支持的第三方登录平台或该平台未启用"),
+    AUTH_OAUTH_STATE_INVALID(1021, "授权状态已失效或已被使用，请重新发起"),
+    AUTH_OAUTH_NOT_BOUND(1022, "该第三方账号尚未绑定面板账号，请先使用账号密码登录后绑定"),
+    AUTH_OAUTH_ALREADY_BOUND(1023, "该第三方账号已被其他面板账号绑定"),
+    AUTH_OAUTH_PROVIDER_BOUND(1024, "当前账号已绑定该平台，请先解绑再重新绑定"),
+    AUTH_OAUTH_CALLBACK_FAILED(1025, "第三方授权失败：换取令牌或用户信息异常"),
+
     // ===== 系统管理 2xxx =====
     USER_EXISTS(2001, "用户名已存在"),
     ROLE_EXISTS(2002, "角色名或权限字符已存在"),

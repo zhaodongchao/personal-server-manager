@@ -40,7 +40,7 @@
 | 区间 | 模块 | 常见码 |
 | ---- | ---- | ---- |
 | 0 / 4xx / 5xx | 通用 | `0` 成功、`400` 参数、`401` 未登录、`403` 无权限、`404` 不存在、`500` 内部错误 |
-| 1xxx | 认证 | `1001` 账号或密码错误、`1002` 失败锁定、`1003` 停用、`1004` 原密码错、`1010` 敏感操作需先完成二级认证（step-up） |
+| 1xxx | 认证 | `1001` 账号或密码错误、`1002` 失败锁定、`1003` 停用、`1004` 原密码错、`1010` 敏感操作需先完成二级认证（step-up）、`1020` 第三方平台未启用、`1021` 授权状态失效或已使用、`1022` 第三方账号未绑定、`1023` 第三方账号已被他人绑定、`1024` 当前账号已绑定该平台、`1025` 第三方授权失败 |
 | 2xxx | 系统管理 | `2001` 用户已存在、`2002` 角色已存在、`2003` 内置数据、`2004` 不能删自己、`2005` 有子菜单、`2006` 角色在用、`2007/2008` 字典重复、`2009` 参数键重复 |
 | 3xxx | 监控 | `3001` 采集器未就绪 |
 | 4xxx | 文件 | `4001` 路径越权、`4002` 目标已存在、`4003` 源路径不存在、`4004` 根目录受限、`4005` 文件过大、`4006` 非文本、`4007` 压缩格式不支持、`4008` 回收站记录失效、`4009` 权限非法、`4010` 目录非空 |
@@ -221,6 +221,44 @@ POST /api/v1/auth/safe
 
 > 标注口径：`@Audit(risky = true)` 仅为**标记**（落 `sys_audit_log.risky`，前端展示「高危」标签）；
 > 真正触发二级认证的是 `@Audit(safe = true)`。两者默认均不改变接口行为（`safe` 逐端点开通）。
+
+### 10. 第三方登录 `/api/v1/auth/oauth`
+
+基于 JustAuth 的 OAuth 2 授权码登录，支持 Gitee / GitHub / 钉钉 / 微信（开放平台） / QQ。
+
+**账号策略：先绑定后登录，不做自动注册。** 第三方身份必须先由**已登录用户**在个人中心绑定
+（写入 `sys_user_oauth`），之后才能在登录页一键登录 —— 面板是服务器管理入口，不允许互联网上
+任意 GitHub/Gitee 账号直接获得访问权限。
+
+**按配置启用**：只有 `serverpanel.oauth.providers.{平台}.client-id` 配置了凭证，`providers`
+接口才返回该平台，前端也才渲染对应图标（微信 / QQ 待企业资质，凭证到位后填环境变量即生效）。
+
+**流程（前端回调方案）**：
+
+```
+登录场景：点图标 → GET /auth/oauth/{provider}/authorize?intent=login → { authorizeUrl }
+          → 浏览器跳授权页 → 平台 302 回 /auth/oauth/callback?code=..&state=..
+          → POST /auth/oauth/{provider}/login {code,state} → { accessToken }
+绑定场景：个人中心（需登录）→ authorize?intent=bind → 回调页 → POST /auth/oauth/{provider}/bind
+```
+
+`state` 形如 `{intent}:{provider}:{random32}`，后端以 `oauth:state:{state}` 存 Redis（TTL 默认 300 秒，
+载荷 `intent|provider|userId`）；校验时用 GETDEL **原子取值并删除**，天然防重放。
+`redirect-uri` 一律取后端配置（`serverpanel.oauth.redirect-uri`），**不接受前端传入**（防 open redirect）。
+
+| 端点 | 认证 | 说明 |
+| ---- | ---- | ---- |
+| `GET /providers` | 免登录 | 返回已启用平台 `[{provider,name}]` |
+| `GET /{provider}/authorize?intent=login\|bind` | 接口白名单放行；`bind` 在 Service 内 `checkLogin` | 返回 `{authorizeUrl}` |
+| `POST /{provider}/login` | 免登录 | body `{code,state}`，命中绑定返回 `{accessToken}`；未绑定 `1022` |
+| `POST /{provider}/bind` | **需登录** | `@Audit(module="system", action="oauth:bind")`；校验 state 内 userId 与当前用户一致 |
+| `GET /bindings` | 需登录 | 当前用户已绑定列表 `[{provider,name,nickname,avatar,boundAt}]` |
+| `DELETE /{provider}/binding` | 需登录 | `@Audit(..., action="oauth:unbind", risky=true)` |
+
+> 安全设计：`bind` / `bindings` / `binding` **不在**拦截器白名单内（保持登录拦截）；
+> 一个第三方身份只能绑一个面板账号（`uk_provider_openid`），一人一平台只绑一条（`uk_user_provider`）；
+> 第三方登录成功/失败均写入 `sys_login_log`（message 标注「xx 第三方登录成功/失败：未绑定面板账号」）。
+> 密码登录方式始终可用，解绑不会导致账号失联。
 
 ## 三、系统管理 `/api/v1/system`
 

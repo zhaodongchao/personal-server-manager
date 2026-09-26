@@ -23,4 +23,11 @@ public final class CacheConstants {
 
     /** 系统参数配置缓存：config:{configKey} → value */
     public static final String CONFIG_PREFIX = "config:";
+
+    /**
+     * OAuth 授权 state（防 CSRF + 防重放）：oauth:state:{完整 state 串} →
+     * JSON {intent, provider, userId?}，带 TTL（默认 300 秒）。
+     * 校验方式：消费时 delete 该 key，返回 false 即已用/过期/伪造。
+     */
+    public static final String OAUTH_STATE_PREFIX = "oauth:state:";
 }

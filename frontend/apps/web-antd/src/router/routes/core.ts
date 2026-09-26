@@ -93,6 +93,20 @@ const coreRoutes: RouteRecordRaw[] = [
         },
       },
       {
+        // 第三方登录统一回调页：全平台在开发者后台登记的回调地址都指向这里
+        // （一个不带 query 的固定地址，平台会把 code / state 追加到 URL 上）。
+        // 挂在 core 路由下，不参与权限拦截。
+        name: 'OAuthCallback',
+        path: 'oauth/callback',
+        component: () =>
+          import('#/views/_core/authentication/oauth-callback.vue'),
+        meta: {
+          hideInMenu: true,
+          hideInTab: true,
+          title: '第三方登录',
+        },
+      },
+      {
         name: 'Register',
         path: 'register',
         component: () => import('#/views/_core/authentication/register.vue'),

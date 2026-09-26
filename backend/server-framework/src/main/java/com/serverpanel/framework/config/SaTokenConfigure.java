@@ -22,7 +22,15 @@ public class SaTokenConfigure implements WebMvcConfigurer {
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(new SaInterceptor(handle -> StpUtil.checkLogin()))
                 .addPathPatterns("/api/**")
-                .excludePathPatterns("/api/v1/auth/login", "/error");
+                .excludePathPatterns(
+                        "/api/v1/auth/login",
+                        "/error",
+                        // 第三方登录：providers/authorize/login 免登录放行
+                        //（authorize 的 intent=bind 在 OAuthService 内显式 checkLogin）；
+                        // bind/bindings/binding 不放行，保持登录拦截。
+                        "/api/v1/auth/oauth/providers",
+                        "/api/v1/auth/oauth/*/authorize",
+                        "/api/v1/auth/oauth/*/login");
     }
 
     @Override

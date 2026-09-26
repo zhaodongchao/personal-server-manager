@@ -23,5 +23,10 @@
       <groupId>org.lionsoul</groupId>
       <artifactId>ip2region</artifactId>
     </dependency>
+    <!-- 第三方 OAuth 登录客户端（登录页第三方登录 / 个人中心绑定） -->
+    <dependency>
+      <groupId>me.zhyd.oauth</groupId>
+      <artifactId>JustAuth</artifactId>
+    </dependency>
   </dependencies>
 </project>

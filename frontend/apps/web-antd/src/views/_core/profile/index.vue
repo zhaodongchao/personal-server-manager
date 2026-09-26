@@ -13,6 +13,7 @@ import AvatarPicker from '#/components/avatar-picker/index.vue';
 
 import ProfileBase from './base-setting.vue';
 import ProfileNotificationSetting from './notification-setting.vue';
+import ProfileOauthSetting from './oauth-setting.vue';
 import ProfilePasswordSetting from './password-setting.vue';
 import ProfileSecuritySetting from './security-setting.vue';
 
@@ -67,6 +68,10 @@ const tabs = ref([
     label: '新消息提醒',
     value: 'notice',
   },
+  {
+    label: '第三方账号',
+    value: 'oauth',
+  },
 ]);
 </script>
 <template>
@@ -88,6 +93,7 @@ const tabs = ref([
       <ProfileSecuritySetting v-if="tabsValue === 'security'" />
       <ProfilePasswordSetting v-if="tabsValue === 'password'" />
       <ProfileNotificationSetting v-if="tabsValue === 'notice'" />
+      <ProfileOauthSetting v-if="tabsValue === 'oauth'" />
     </template>
   </Profile>
 </template>
