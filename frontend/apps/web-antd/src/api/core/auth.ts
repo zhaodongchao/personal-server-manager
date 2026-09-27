@@ -5,7 +5,7 @@ export namespace AuthApi {
   export interface LoginParams {
     password?: string;
     username?: string;
-    /** 人机校验登录令牌（滑块校验通过后下发，一次性），缺失后端返回 1037 */
+    /** 人机校验登录令牌（点选校验通过后下发，一次性），缺失后端返回 1037 */
     captcha?: string;
   }
 
@@ -38,17 +38,24 @@ export namespace AuthApi {
     captcha: string;
   }
 
-  /** 滑块挑战令牌 */
-  export interface CaptchaTokenResult {
+  /** 点选验证码挑战（图片 + 需按序点击的目标字符；答案坐标不在响应中） */
+  export interface ClickCaptchaResult {
     captchaToken: string;
+    /** 验证码图片（data:image/png;base64,...） */
+    image: string;
+    /** 需按顺序点击的目标字符 */
+    prompt: string[];
+    width: number;
+    height: number;
   }
 
-  /** 发信令牌（人机校验通过后下发，/mail/code 携带） */
-  export interface SendTokenResult {
-    sendToken: string;
+  /** 一次点击的相对坐标（0~1，相对图片宽高，与显示尺寸无关） */
+  export interface CaptchaClickPoint {
+    x: number;
+    y: number;
   }
 
-  /** 滑块校验响应（按 purpose 返回对应令牌，二选一） */
+  /** 人机校验响应（按 purpose 返回对应令牌，二选一） */
   export interface CaptchaVerifyResult {
     /** purpose=send：发邮件验证码令牌 */
     sendToken?: string;
@@ -117,7 +124,7 @@ export async function getMailEnabledApi() {
 /**
  * 发送邮箱验证码。
  *
- * 必须先通过滑块人机校验拿到发信令牌（captcha）再调用本接口，否则后端返回 1037/1038；
+ * 必须先通过点选人机校验拿到发信令牌（captcha）再调用本接口，否则后端返回 1037/1038；
  * 场景前置校验在后端（login 要求邮箱已绑定账号、register 要求注册开关开启且邮箱未占用），
  * 冷却 / 日限 / 一次性消费同样由后端 MailCodeService 承担，前端不做任何计数。
  */
@@ -125,22 +132,27 @@ export async function sendMailCodeApi(data: AuthApi.MailCodeParams) {
   return requestClient.post('/auth/mail/code', data);
 }
 
-/** 领取滑块人机校验挑战令牌 */
-export async function getCaptchaTokenApi() {
-  return requestClient.post<AuthApi.CaptchaTokenResult>('/auth/captcha/slider');
+/** 领取点选人机校验挑战（图片 + 目标字符；答案坐标仅存服务端） */
+export async function getClickCaptchaApi() {
+  return requestClient.post<AuthApi.ClickCaptchaResult>('/auth/captcha/click');
 }
 
-/** 校验滑块并换取一次性令牌（dragSeconds 为拖拽时长秒；purpose 决定返回 sendToken / loginToken） */
-export async function verifyCaptchaApi(
+/**
+ * 上报点击坐标换取一次性令牌。
+ *
+ * clicks 为按提示顺序点击的相对坐标（0~1）；
+ * purpose=send 返回 sendToken（供 /mail/code），purpose=login 返回 loginToken（供 /auth/login）。
+ * 坐标错误 / 顺序不符 / 挑战失效均由后端返回 1038。
+ */
+export async function verifyClickCaptchaApi(
   captchaToken: string,
-  dragSeconds: number,
+  clicks: AuthApi.CaptchaClickPoint[],
   purpose: 'send' | 'login' = 'send',
 ) {
-  return requestClient.post<AuthApi.CaptchaVerifyResult>('/auth/captcha/slider/verify', {
-    captchaToken,
-    dragSeconds,
-    purpose,
-  });
+  return requestClient.post<AuthApi.CaptchaVerifyResult>(
+    '/auth/captcha/click/verify',
+    { captchaToken, clicks, purpose },
+  );
 }
 
 /** 注册用户名实时查重 */

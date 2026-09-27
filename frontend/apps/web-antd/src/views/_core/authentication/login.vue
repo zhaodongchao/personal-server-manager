@@ -19,7 +19,7 @@ import CaptchaModal from './components/captcha-modal.vue';
 /**
  * 密码登录。
  *
- * 与邮箱发码同体系：登录敏感操作前必须先通过滑块人机校验，拿到一次性
+ * 与邮箱发码同体系：登录敏感操作前必须先通过点选人机校验，拿到一次性
  * 登录令牌（captcha:login:）随登录请求上报，后端原子消费；缺失/失效返回
  * 1037/1038。令牌单次使用，登录失败（含密码错误）后清空，下次需重新校验。
  */
@@ -32,9 +32,11 @@ const {
   open: captchaOpen,
   verifying: captchaVerifying,
   error: captchaError,
-  nonce: captchaNonce,
+  image: captchaImage,
+  prompt: captchaPrompt,
   openCaptcha,
-  onSuccess: onCaptchaSuccess,
+  onComplete: onCaptchaComplete,
+  refresh: refreshCaptcha,
   close: closeCaptcha,
 } = useMailCaptcha();
 
@@ -76,7 +78,7 @@ const formSchema = computed((): VbenFormSchema[] => {
 });
 
 /**
- * 密码登录提交：先过滑块人机校验拿登录令牌，再调登录接口。
+ * 密码登录提交：先过点选人机校验拿登录令牌，再调登录接口。
  * 用户取消校验则不提交；登录失败（含密码错误、令牌失效）清空令牌，下次重新校验。
  */
 async function handleSubmit(values: Recordable<any>) {
@@ -118,15 +120,17 @@ async function handleSubmit(values: Recordable<any>) {
     </template>
   </AuthenticationLogin>
 
-  <!-- 登录前滑块人机校验弹窗 -->
+  <!-- 登录前点选人机校验弹窗 -->
   <CaptchaModal
     :error="captchaError"
-    :nonce="captchaNonce"
+    :image="captchaImage"
     :open="captchaOpen"
+    :prompt="captchaPrompt"
     :verifying="captchaVerifying"
     purpose="login"
     @close="closeCaptcha"
-    @success="onCaptchaSuccess"
+    @complete="onCaptchaComplete"
+    @refresh="refreshCaptcha"
   />
 </template>
 

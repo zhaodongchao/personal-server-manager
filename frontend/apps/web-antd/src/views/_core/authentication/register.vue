@@ -32,9 +32,11 @@ const {
   open: captchaOpen,
   verifying: captchaVerifying,
   error: captchaError,
-  nonce: captchaNonce,
+  image: captchaImage,
+  prompt: captchaPrompt,
   openCaptcha,
-  onSuccess: onCaptchaSuccess,
+  onComplete: onCaptchaComplete,
+  refresh: refreshCaptcha,
   close: closeCaptcha,
 } = useMailCaptcha();
 
@@ -188,7 +190,7 @@ async function handleSendCode() {
   const email = String(values?.email ?? '').trim();
   // 域名白名单（如配置）先在客户端拦截，避免无谓的邮件发送与冷却消耗
   checkEmailDomain(email);
-  // 先通过滑块人机校验换取发信令牌，再发码（后端缺令牌返回 1037/1038）
+  // 先通过点选人机校验换取发信令牌，再发码（后端缺令牌返回 1037/1038）
   const sendToken = await openCaptcha();
   await sendMailCode(email, 'register', sendToken);
 }
@@ -229,13 +231,16 @@ async function handleSubmit(value: Recordable<any>) {
       {{ emailDomainTip }}
     </p>
 
+    <!-- 发码前的点选人机校验弹窗（purpose 默认 send） -->
     <CaptchaModal
       :error="captchaError"
-      :nonce="captchaNonce"
+      :image="captchaImage"
       :open="captchaOpen"
+      :prompt="captchaPrompt"
       :verifying="captchaVerifying"
       @close="closeCaptcha"
-      @success="onCaptchaSuccess"
+      @complete="onCaptchaComplete"
+      @refresh="refreshCaptcha"
     />
   </div>
 </template>

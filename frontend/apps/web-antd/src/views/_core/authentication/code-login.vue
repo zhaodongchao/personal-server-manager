@@ -33,9 +33,11 @@ const {
   open: captchaOpen,
   verifying: captchaVerifying,
   error: captchaError,
-  nonce: captchaNonce,
+  image: captchaImage,
+  prompt: captchaPrompt,
   openCaptcha,
-  onSuccess: onCaptchaSuccess,
+  onComplete: onCaptchaComplete,
+  refresh: refreshCaptcha,
   close: closeCaptcha,
 } = useMailCaptcha();
 
@@ -93,7 +95,7 @@ async function handleSendCode() {
   }
   const values = await formApi?.getValues();
   const email = String(values?.email ?? '').trim();
-  // 先通过滑块人机校验换取发信令牌，再发码（后端缺令牌返回 1037/1038）
+  // 先通过点选人机校验换取发信令牌，再发码（后端缺令牌返回 1037/1038）
   const sendToken = await openCaptcha();
   await sendMailCode(email, 'login', sendToken);
 }
@@ -125,12 +127,15 @@ async function handleSubmit(values: Recordable<any>) {
     @submit="handleSubmit"
   />
 
+  <!-- 发码前的点选人机校验弹窗（purpose 默认 send） -->
   <CaptchaModal
     :error="captchaError"
-    :nonce="captchaNonce"
+    :image="captchaImage"
     :open="captchaOpen"
+    :prompt="captchaPrompt"
     :verifying="captchaVerifying"
     @close="closeCaptcha"
-    @success="onCaptchaSuccess"
+    @complete="onCaptchaComplete"
+    @refresh="refreshCaptcha"
   />
 </template>
