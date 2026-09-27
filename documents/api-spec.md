@@ -40,7 +40,7 @@
 | 区间 | 模块 | 常见码 |
 | ---- | ---- | ---- |
 | 0 / 4xx / 5xx | 通用 | `0` 成功、`400` 参数、`401` 未登录、`403` 无权限、`404` 不存在、`500` 内部错误 |
-| 1xxx | 认证 | `1001` 账号或密码错误、`1002` 失败锁定、`1003` 停用、`1004` 原密码错、`1010` 敏感操作需先完成二级认证（step-up）、`1020` 第三方平台未启用、`1021` 授权状态失效或已使用、`1022` 第三方账号未绑定、`1023` 第三方账号已被他人绑定、`1024` 当前账号已绑定该平台、`1025` 第三方授权失败、`1030` 邮件服务未配置、`1031` 验证码发送过于频繁、`1032` 超出每日发送上限、`1033` 验证码错误或已失效、`1034` 注册功能未开启、`1035` 用户名或邮箱已被使用、`1036` 邮箱域名不在允许注册范围内、`1037` 请先完成人机验证、`1038` 人机验证已失效或未完成、`1039` 发送请求过于频繁已被临时限制 |
+| 1xxx | 认证 | `1001` 账号或密码错误、`1002` 失败锁定、`1003` 停用、`1004` 原密码错、`1010` 敏感操作需先完成二级认证（step-up）、`1020` 第三方平台未启用、`1021` 授权状态失效或已使用、`1022` 第三方账号未绑定、`1023` 第三方账号已被他人绑定、`1024` 当前账号已绑定该平台、`1025` 第三方授权失败、`1030` 邮件服务未配置、`1031` 验证码发送过于频繁、`1032` 超出每日发送上限、`1033` 验证码错误或已失效、`1034` 注册功能未开启、`1035` 用户名或邮箱已被使用、`1036` 邮箱域名不在允许注册范围内、`1037` 请先完成人机验证、`1038` 人机验证已失效或未完成、`1039` 发送请求过于频繁已被临时限制、`1040` 人机验证生成失败（服务器缺字体） |
 | 2xxx | 系统管理 | `2001` 用户已存在、`2002` 角色已存在、`2003` 内置数据、`2004` 不能删自己、`2005` 有子菜单、`2006` 角色在用、`2007/2008` 字典重复、`2009` 参数键重复 |
 | 3xxx | 监控 | `3001` 采集器未就绪 |
 | 4xxx | 文件 | `4001` 路径越权、`4002` 目标已存在、`4003` 源路径不存在、`4004` 根目录受限、`4005` 文件过大、`4006` 非文本、`4007` 压缩格式不支持、`4008` 回收站记录失效、`4009` 权限非法、`4010` 目录非空 |
@@ -82,7 +82,7 @@ POST /api/v1/auth/login        # 无需登录
 | `password` | string | 必填 |
 | `captcha` | string | 必填（实际效果），人机校验登录令牌，缺失 `1037`、失效/已用 `1038` |
 
-> **密码登录同样需先过人机校验**：`captcha` 为滑块校验（purpose=login）签发的一次性登录令牌，
+> **密码登录同样需先过人机校验**：`captcha` 为点选校验（purpose=login）签发的一次性登录令牌，
 > 后端在任何账号/密码逻辑之前原子消费它，缺失或失效直接 `1037`/`1038`，不会被当作
 > 「用户名或密码错误」返回（避免被用作账号枚举旁路）。令牌单次使用，登录失败后需重新校验。
 > 流程与发信令牌一致，详见「邮箱验证码登录与注册」章节的人机校验小节。
@@ -288,21 +288,36 @@ POST /api/v1/auth/safe
 **邮箱域名白名单**（可选）：`serverpanel.register.allowed-email-domains` 逗号分隔，留空 = 不限制。
 非空时，发码（register 分支）与注册接口均校验邮箱域名，不在名单返回 `1036`。
 
-**发送验证码前的人机校验（滑块）**：`/auth/mail/code` 必须携带一次性发信令牌 `captcha`，
-否则返回 `1037`；令牌已过期 / 已用过返回 `1038`。令牌由滑块校验签发，流程：
+**发送验证码前的人机校验（点选字符）**：`/auth/mail/code` 必须携带一次性发信令牌 `captcha`，
+否则返回 `1037`；令牌已过期 / 已用过返回 `1038`。令牌由点选校验签发，流程：
 
-1. `POST /auth/captcha/slider` → 领取挑战令牌 `captchaToken`；
-2. 前端滑块拖动完成，把拖拽时长（秒）回传 `POST /auth/captcha/slider/verify`；
-3. 后端校验挑战未过期 / 未用过、且 `拖拽时长 ≥ min-drag-seconds`（排除「瞬间置位」脚本），
-   通过则签发一次性发信令牌 `sendToken`（TTL 60s，原子消费）；
+1. `POST /auth/captcha/click` → 返回 `{captchaToken, image, prompt, width, height}`：
+   一张随机字符图片（含目标字符与干扰字符，带随机字体 / 字号 / 颜色 / 旋转与干扰线噪点）
+   和「要依次点击哪些字符」；**目标字符的坐标答案只存服务端 Redis，不下发前端**；
+2. 用户按提示顺序点击图片上的目标字符，前端把每次点击的**相对坐标**（`x`/`y` 均为 0~1，
+   相对图片宽高，与显示尺寸无关）收集成 `clicks` 数组回传 `POST /auth/captcha/click/verify`；
+3. 后端换算成像素后与挑战中记录的目标字符中心逐个比对：**数量一致 + 顺序一致 +
+   每次点击都落在命中半径内**才通过，随后签发一次性令牌（TTL 60s，原子消费）；
 4. 调用 `/auth/mail/code` 时 `captcha = sendToken`。
 
-**密码登录也走同一套人机校验**：滑块校验时 `purpose=login` → 返回 `loginToken`，
+**密码登录也走同一套人机校验**：点选校验时 `purpose=login` → 返回 `loginToken`，
 随 `POST /auth/login` 的 `captcha` 字段上报，后端原子消费（缺失 `1037`、失效/已用 `1038`）。
 登录令牌与发信令牌使用不同 Redis 前缀（`captcha:login:` / `captcha:send:`），
 两场景令牌不可互用，令牌 TTL 同为 `captcha.send-token-ttl-seconds`。
 
-滑块是交互式人机校验（抬高自动化门槛），真正的抗爆破 / 防轰炸由下方 **发信安全拦截** 承担。
+**点选校验的安全取舍**：
+
+| 机制 | 说明 |
+| ---- | ---- |
+| 答案不下发 | 图片随响应下发，但目标字符坐标只存服务端；脚本即便解析响应也拿不到答案，必须真的「看图认字」 |
+| 命中半径自适应 | 实际半径 = `min(click-hit-radius, 安全半径)`；安全半径由格子尺寸推出（约半格 - 4px），字符越密越小，避免点错也判过 |
+| 挑战限次 | 同一张图最多允许 `click-max-attempts` 次失败，超限即作废（前端自动换一张新图） |
+| 挑战单次使用 | 校验通过立即删除，杜绝同一挑战被反复兑换令牌 |
+| 挑战时效 | `click-ttl-seconds` 到期需重新领取 |
+
+点选是交互式人机校验（抬高自动化门槛），真正的抗爆破 / 防轰炸由下方 **发信安全拦截** 承担。
+> **部署注意**：验证码图片由后端用 JDK AWT 渲染，依赖宿主机字体（Debian 需 `fonts-dejavu-core`）。
+> 无可用字体时接口返回 `1040`（而非空白图），按提示安装字体即可。
 
 **发信安全拦截（SendGuard，防邮件轰炸 / 账号枚举）**：`/auth/mail/code` 在「人机校验通过之后、
 实际发码之前」按**来源 IP** 做滑动窗口限流与临时封锁（配置见下表），命中返回 `1039`：
@@ -326,8 +341,8 @@ POST /api/v1/auth/safe
 | 方法 | 路径 | 认证 | 说明 |
 | ---- | ---- | ---- | ---- |
 | GET | `/auth/mail/enabled` | 免登录 | 返回 `{enabled, registerEnabled, allowedEmailDomains}`：SMTP 是否就绪 / 自助注册是否开放 / 允许注册的邮箱域名（空数组=不限制）。注册类接口各自再校验一次开关，`registerEnabled=false` 时返回 `1034` |
-| POST | `/auth/captcha/slider` | 免登录 | 领取滑块挑战令牌 `captchaToken`（Redis 登记，TTL `slider-ttl-seconds`） |
-| POST | `/auth/captcha/slider/verify` | 免登录 | body `{captchaToken, dragSeconds, purpose}`（`purpose` ∈ `send`（默认）\|`login`）→ 按用途返回 `{sendToken}` 或 `{loginToken}`；校验挑战未过期 / 未用过且拖拽时长达标（`1038` 校验失败）。两种令牌前缀隔离，不可跨场景重放 |
+| POST | `/auth/captcha/click` | 免登录 | 下发点选验证码 → `{captchaToken, image, prompt, width, height}`：`image` 为 `data:image/png;base64,...`，`prompt` 为需按序点击的目标字符。**答案坐标只存服务端**（Redis `captcha:click:{token}`，TTL `click-ttl-seconds`）；无可用字体时返回 `1040` |
+| POST | `/auth/captcha/click/verify` | 免登录 | body `{captchaToken, clicks, purpose}`（`clicks` 为按序点击的相对坐标 `[{x,y}]`，0~1；`purpose` ∈ `send`（默认）\|`login`）→ 按用途返回 `{sendToken}` 或 `{loginToken}`；数量 / 顺序 / 命中半径任一不符返回 `1038`（记一次失败，超 `click-max-attempts` 作废）。两种令牌前缀隔离，不可跨场景重放 |
 | GET | `/auth/register/check-username` | 免登录 | query `username` → `{available}`；格式非法直接 `false`（不查库） |
 | POST | `/auth/mail/code` | 免登录 | body `{email, purpose, captcha}`（`purpose` ∈ `login\|register`）。**`captcha` 为必填的发信令牌**：缺失 `1037`、失效/已用 `1038`；同时受 SendGuard 按 IP 限流/封锁约束（`1039`）。login 要求邮箱已绑定账号（`1005`）；register 要求注册开关开启且邮箱未被占用（`1034`/`1035`），命中域名白名单时返回 `1036` |
 | POST | `/auth/mail/login` | 免登录 | body `{email, code}` → `{accessToken}`；用户停用 `1003`、验证码错 `1033` |
@@ -340,9 +355,12 @@ POST /api/v1/auth/safe
 
 | 配置项 | 环境变量 | 默认 | 说明 |
 | ---- | ---- | ---- | ---- |
-| `captcha.slider-ttl-seconds` | `PANEL_CAPTCHA_SLIDER_TTL` | `120` | 滑块挑战令牌有效期（秒） |
+| `captcha.click-ttl-seconds` | `PANEL_CAPTCHA_CLICK_TTL` | `120` | 点选挑战有效期（秒），过期需换一张 |
 | `captcha.send-token-ttl-seconds` | `PANEL_CAPTCHA_SEND_TOKEN_TTL` | `60` | 一次性令牌有效期（秒），发信令牌与登录令牌共用此 TTL |
-| `captcha.min-drag-seconds` | `PANEL_CAPTCHA_MIN_DRAG` | `0.3` | 拖拽时长下限（秒），低于视为「瞬间置位」非人类操作 |
+| `captcha.click-hit-radius` | `PANEL_CAPTCHA_CLICK_RADIUS` | `42` | 命中半径**上限**（像素）；实际取 `min(该值, 渲染器安全半径)` |
+| `captcha.click-max-attempts` | `PANEL_CAPTCHA_CLICK_MAX_ATTEMPTS` | `3` | 单张验证码允许的最大失败次数，超限作废 |
+| `captcha.image-width` / `image-height` | `PANEL_CAPTCHA_IMAGE_WIDTH` / `_HEIGHT` | `300` / `160` | 验证码画布尺寸（像素） |
+| `captcha.target-count` / `decoy-count` | `PANEL_CAPTCHA_TARGET_COUNT` / `_DECOY_COUNT` | `3` / `3` | 目标字符数（= 需点击次数）/ 干扰字符数 |
 | `send-guard.ip-limit-per-minute` | `PANEL_SEND_GUARD_IP_PM` | `5` | 单 IP 每分钟发码上限（超出不封锁，仅平滑限流） |
 | `send-guard.ip-limit-per-hour` | `PANEL_SEND_GUARD_IP_PH` | `30` | 单 IP 每小时发码上限（超出触发临时封锁） |
 | `send-guard.ip-block-minutes` | `PANEL_SEND_GUARD_BLOCK_MIN` | `30` | 触发后对该 IP 的封锁时长（分钟） |
