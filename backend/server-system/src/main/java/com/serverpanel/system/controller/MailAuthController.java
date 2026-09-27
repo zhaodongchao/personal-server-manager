@@ -41,17 +41,20 @@ public class MailAuthController {
     private final MailSenderService mailSenderService;
 
     /**
-     * 邮箱认证可用性快照：SMTP 是否配置 + 自助注册是否开放。
+     * 邮箱认证可用性快照：SMTP 是否配置 + 自助注册是否开放 + 允许的邮箱域名白名单。
      *
-     * <p>刻意返回两个字段而非合成一个：邮箱登录只依赖 SMTP，注册页却要求二者同时为真
+     * <p>刻意返回多个字段而非合成一个：邮箱登录只依赖 SMTP，注册页却要求二者同时为真
      * （没配 SMTP 就发不出验证码，注册链路必然断在第一步）。合成一个布尔值前端无法区分
-     * 「该不该显示注册入口」与「该不该显示邮箱登录入口」。
+     * 「该不该显示注册入口」与「该不该显示邮箱登录入口」。allowedEmailDomains 为空白名单
+     * 时返回空数组，表示不限制域名。
      */
     @GetMapping("/mail/enabled")
-    public R<Map<String, Boolean>> enabled() {
-        return R.ok(Map.of(
-                "enabled", mailSenderService.enabled(),
-                "registerEnabled", authService.registerEnabled()));
+    public R<Map<String, Object>> enabled() {
+        Map<String, Object> result = new java.util.HashMap<>(4);
+        result.put("enabled", mailSenderService.enabled());
+        result.put("registerEnabled", authService.registerEnabled());
+        result.put("allowedEmailDomains", authService.registerAllowedDomains());
+        return R.ok(result);
     }
 
     /**

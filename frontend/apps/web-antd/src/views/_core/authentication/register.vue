@@ -2,7 +2,7 @@
 import type { VbenFormSchema } from '@vben/common-ui';
 import type { Recordable } from '@vben/types';
 
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { AuthenticationRegister, z } from '@vben/common-ui';
@@ -23,9 +23,40 @@ import { useMailAuth } from '#/composables/use-mail-auth';
 defineOptions({ name: 'Register' });
 
 const router = useRouter();
-const { sendMailCode } = useMailAuth();
+const { sendMailCode, allowedEmailDomains, loadMailEnabled } = useMailAuth();
 
 const loading = ref(false);
+
+// 拉取邮件可用性 + 允许注册的邮箱域名白名单（驱动提示与预校验）；
+// 与登录页同口径：composable 状态按实例隔离，注册页需自行加载
+onMounted(loadMailEnabled);
+
+/** 允许注册的邮箱域名提示（空白名单 = 不限制，不展示） */
+const emailDomainTip = computed(() => {
+  if (!allowedEmailDomains.value?.length) {
+    return '';
+  }
+  return $t('authentication.registerEmailDomainTip', [
+    allowedEmailDomains.value.join('、'),
+  ]);
+});
+
+/** 客户端预校验邮箱域名（仅 UX，最终由后端 1036 兜底） */
+function checkEmailDomain(email: string) {
+  const domains = allowedEmailDomains.value;
+  if (!domains?.length || !email.includes('@')) {
+    return;
+  }
+  const domain = email.split('@')[1].trim().toLowerCase();
+  const matched = domains.some(
+    (d) => domain === d.toLowerCase() || domain.endsWith(`.${d.toLowerCase()}`),
+  );
+  if (!matched) {
+    throw new Error(
+      $t('authentication.registerEmailDomainError', [domains.join('、')]),
+    );
+  }
+}
 
 /** 表单实例：AuthenticationRegister 经 defineExpose 暴露 getFormApi，发码需读取已填邮箱 */
 const formRef = ref<InstanceType<typeof AuthenticationRegister>>();
@@ -123,6 +154,8 @@ async function handleSendCode() {
   }
   const values = await formApi?.getValues();
   const email = String(values?.email ?? '').trim();
+  // 域名白名单（如配置）先在客户端拦截，避免无谓的邮件发送与冷却消耗
+  checkEmailDomain(email);
   await sendMailCode(email, 'register');
 }
 
@@ -147,11 +180,19 @@ async function handleSubmit(value: Recordable<any>) {
 </script>
 
 <template>
-  <AuthenticationRegister
-    ref="formRef"
-    :form-schema="formSchema"
-    :loading="loading"
-    :sub-title="$t('authentication.registerSubtitle')"
-    @submit="handleSubmit"
-  />
+  <div>
+    <AuthenticationRegister
+      ref="formRef"
+      :form-schema="formSchema"
+      :loading="loading"
+      :sub-title="$t('authentication.registerSubtitle')"
+      @submit="handleSubmit"
+    />
+    <p
+      v-if="emailDomainTip"
+      class="text-muted-foreground mt-3 text-center text-sm"
+    >
+      {{ emailDomainTip }}
+    </p>
+  </div>
 </template>

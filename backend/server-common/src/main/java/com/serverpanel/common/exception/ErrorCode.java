@@ -48,6 +48,7 @@ public enum ErrorCode {
     MAIL_CODE_INVALID(1033, "验证码错误或已失效"),
     REGISTER_DISABLED(1034, "注册功能未开启"),
     EMAIL_OR_USERNAME_EXISTS(1035, "用户名或邮箱已被使用"),
+    REGISTER_EMAIL_DOMAIN_NOT_ALLOWED(1036, "该邮箱域名不在允许注册的范围内"),
 
     // ===== 系统管理 2xxx =====
     USER_EXISTS(2001, "用户名已存在"),

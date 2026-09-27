@@ -27,6 +27,8 @@ import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -54,6 +56,10 @@ public class AuthService {
     /** 自助注册总开关（默认关闭；新注册账号不分配角色，仅个人中心） */
     @Value("${serverpanel.register.enabled:false}")
     private boolean registerEnabled;
+
+    /** 允许注册的邮箱域名白名单（逗号分隔，空白 = 不限制） */
+    @Value("${serverpanel.register.allowed-email-domains:}")
+    private String allowedEmailDomains;
 
     /** 二级认证安全窗口（秒）；下限 30 秒在 openSafe 内钳制 */
     @Value("${serverpanel.audit.safe-timeout-seconds:300}")
@@ -129,6 +135,7 @@ public class AuthService {
             if (!registerEnabled) {
                 throw new ServiceException(ErrorCode.REGISTER_DISABLED);
             }
+            checkEmailDomainAllowed(email);
             if (exists) {
                 throw new ServiceException(ErrorCode.EMAIL_OR_USERNAME_EXISTS, "该邮箱已被注册");
             }
@@ -182,6 +189,41 @@ public class AuthService {
     }
 
     /**
+     * 允许注册的邮箱域名白名单（空白 = 不限制）。
+     * 供 /auth/mail/enabled 一并返回，前端据此在注册页给出域名提示与预校验。
+     */
+    public List<String> registerAllowedDomains() {
+        if (allowedEmailDomains == null || allowedEmailDomains.isBlank()) {
+            return List.of();
+        }
+        List<String> domains = new ArrayList<>();
+        for (String d : allowedEmailDomains.split(",")) {
+            String trimmed = d.trim().toLowerCase();
+            if (!trimmed.isEmpty()) {
+                domains.add(trimmed);
+            }
+        }
+        return domains;
+    }
+
+    /** 注册邮箱域名白名单校验：白名单非空且邮箱域名不在其中则拒绝（1036） */
+    private void checkEmailDomainAllowed(String email) {
+        List<String> domains = registerAllowedDomains();
+        if (domains.isEmpty()) {
+            return;
+        }
+        String domain = email.contains("@")
+                ? email.substring(email.lastIndexOf('@') + 1).trim().toLowerCase()
+                : "";
+        boolean matched = domains.stream()
+                .anyMatch(allowed -> domain.equals(allowed) || domain.endsWith("." + allowed));
+        if (!matched) {
+            throw new ServiceException(ErrorCode.REGISTER_EMAIL_DOMAIN_NOT_ALLOWED,
+                "仅允许以下邮箱域名注册：" + String.join("、", domains));
+        }
+    }
+
+    /**
      * 自助注册（邮箱验证码方式）：开关校验 → 唯一性前置校验 → 校验验证码（一次性消费）→ 落库。
      *
      * <p>新账号不分配任何角色（登录后仅个人中心），业务权限由管理员在用户管理中分配；
@@ -192,6 +234,7 @@ public class AuthService {
             throw new ServiceException(ErrorCode.REGISTER_DISABLED);
         }
         String email = body.getEmail();
+        checkEmailDomainAllowed(email);
         String ip = clientIp(request);
 
         if (userMapper.selectCount(new LambdaQueryWrapper<SysUser>()

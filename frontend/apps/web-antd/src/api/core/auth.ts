@@ -17,12 +17,14 @@ export namespace AuthApi {
     status: number;
   }
 
-  /** 邮箱认证可用性：SMTP 是否配置 + 自助注册是否开放（两个开关相互独立） */
+  /** 邮箱认证可用性：SMTP 是否配置 + 自助注册是否开放 + 允许注册的邮箱域名 */
   export interface MailEnabledResult {
     /** SMTP 与发件人均已配置 —— 决定「邮箱验证码登录」入口 */
     enabled: boolean;
     /** serverpanel.register.enabled —— 与 enabled 共同决定「创建账号」入口 */
     registerEnabled: boolean;
+    /** 允许注册的邮箱域名白名单，空数组表示不限制 */
+    allowedEmailDomains: string[];
   }
 
   /** 发送邮箱验证码参数 */

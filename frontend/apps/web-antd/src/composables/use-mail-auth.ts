@@ -17,6 +17,8 @@ export function useMailAuth() {
   const mailEnabled = ref(false);
   /** 自助注册总开关 serverpanel.register.enabled（独立于 SMTP） */
   const registerEnabled = ref(false);
+  /** 允许注册的邮箱域名白名单，空数组表示不限制 */
+  const allowedEmailDomains = ref<string[]>([]);
   const loading = ref(false);
 
   /**
@@ -36,6 +38,7 @@ export function useMailAuth() {
       const result = await getMailEnabledApi();
       mailEnabled.value = result?.enabled ?? false;
       registerEnabled.value = result?.registerEnabled ?? false;
+      allowedEmailDomains.value = result?.allowedEmailDomains ?? [];
       if (!mailEnabled.value) {
         // 与 OAuth 同口径：界面表现与「接口失败」完全一致，靠日志区分。
         // 打出这一行 = 接口通了但后端没配 SMTP，去查 spring.mail.host / serverpanel.mail.from
@@ -69,6 +72,7 @@ export function useMailAuth() {
   }
 
   return {
+    allowedEmailDomains,
     loadMailEnabled,
     loading,
     mailEnabled,
