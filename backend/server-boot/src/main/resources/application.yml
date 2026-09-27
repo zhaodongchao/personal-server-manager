@@ -119,15 +119,24 @@ serverpanel:
     # 允许注册的邮箱域名白名单（逗号分隔，留空 = 不限制）。
     # 例：PANEL_REGISTER_EMAIL_DOMAINS=yourcompany.com,sub.yourcompany.com
     allowed-email-domains: ${PANEL_REGISTER_EMAIL_DOMAINS:}
-  # 人机校验（滑块）：发送邮箱验证码前必须先通过，防止脚本批量刷邮件 / 枚举。
-  # 流程：GET /auth/captcha/slider 下发 ticket → 前端滑块拖动完成 →
-  # POST /auth/captcha/slider/verify 校验通过后下发一次性发信令牌 → /mail/code 携带令牌发码。
-  # 注：滑块本身为交互式人机校验（抬高自动化门槛），真正的防护由 send-guard 限流与封锁承担。
+  # 人机校验（点选字符）：发送邮箱验证码 / 密码登录前必须先通过，防止脚本批量刷邮件、枚举账号。
+  # 流程：POST /auth/captcha/click 下发一张随机字符图片与「要依次点击哪些字符」（答案坐标仅存服务端）
+  # → 用户按序点击 → POST /auth/captcha/click/verify 校验坐标，通过后按 purpose 签发一次性令牌
+  # → /mail/code 或 /auth/login 携带令牌原子消费。
+  # 注：点选本身为交互式人机校验（抬高自动化门槛），真正的防护由 send-guard 限流与封锁承担。
+  # 依赖宿主字体（Debian 需 fonts-dejavu-core）：缺字体时接口返回 1040 而非空白图。
   captcha:
-    slider-ttl-seconds: ${PANEL_CAPTCHA_SLIDER_TTL:120}
+    click-ttl-seconds: ${PANEL_CAPTCHA_CLICK_TTL:120}
     send-token-ttl-seconds: ${PANEL_CAPTCHA_SEND_TOKEN_TTL:60}
-    # 滑块拖拽时长下限（秒）：低于该值视为非人类操作（如瞬间置位），verify 直接拒绝
-    min-drag-seconds: ${PANEL_CAPTCHA_MIN_DRAG:0.3}
+    # 命中半径（像素）：点击点与目标字符中心距离不超过该值算命中
+    click-hit-radius: ${PANEL_CAPTCHA_CLICK_RADIUS:42}
+    # 单张验证码允许的最大失败次数，超过作废需换一张（防在同一张图上反复试坐标）
+    click-max-attempts: ${PANEL_CAPTCHA_CLICK_MAX_ATTEMPTS:3}
+    # 画布与字符数量：目标字符数即用户需点击的次数
+    image-width: ${PANEL_CAPTCHA_IMAGE_WIDTH:300}
+    image-height: ${PANEL_CAPTCHA_IMAGE_HEIGHT:160}
+    target-count: ${PANEL_CAPTCHA_TARGET_COUNT:3}
+    decoy-count: ${PANEL_CAPTCHA_DECOY_COUNT:3}
   # 发信安全拦截：基于来源 IP 的滑动窗口限流 + 超额临时封锁，防邮件轰炸 / 账号枚举。
   # 每分钟上限用于平滑限流，每小时上限触发临时封锁（防长时间低速爆破）。
   send-guard:

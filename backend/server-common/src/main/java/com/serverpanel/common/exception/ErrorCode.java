@@ -52,6 +52,7 @@ public enum ErrorCode {
     CAPTCHA_REQUIRED(1037, "请先完成人机验证"),
     CAPTCHA_INVALID(1038, "人机验证已失效或未完成，请重新验证"),
     SEND_GUARD_BLOCKED(1039, "发送请求过于频繁，已被临时限制，请稍后再试"),
+    CAPTCHA_RENDER_FAILED(1040, "人机验证生成失败，请检查服务器字体环境（如 Debian 需安装 fonts-dejavu-core）"),
 
     // ===== 系统管理 2xxx =====
     USER_EXISTS(2001, "用户名已存在"),

@@ -24,7 +24,7 @@ public class MailCodeBody {
     private String purpose;
 
     /**
-     * 一次性发信令牌（由人机校验 {@code /auth/captcha/slider/verify} 签发）。
+     * 一次性发信令牌（由人机校验 {@code /auth/captcha/click/verify} 签发）。
      * 不发 @NotBlank：缺失时由 AuthService 统一返回 1037 CAPTCHA_REQUIRED，
      * 与「令牌已失效」的 1038 走同一处理口径，前端只需提示「请先完成人机验证」。
      */

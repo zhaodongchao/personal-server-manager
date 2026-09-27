@@ -48,11 +48,20 @@ public final class CacheConstants {
     public static final String MAIL_FAIL_PREFIX = "mail:fail:";
 
     /**
-     * 滑块人机校验挑战：captcha:slider:{token} → "1"，TTL 由 serverpanel.captcha
-     * .slider-ttl-seconds 控制（默认 120 秒）。校验（verify）时一次性消费，
-     * 防止同一挑战被反复兑换发信令牌。
+     * 点选人机校验挑战：captcha:click:{token} → 挑战载荷
+     * {@code "宽x高|字符:中心x:中心y|..."}（字符为中心点像素坐标，按点击顺序排列），
+     * TTL 由 serverpanel.captcha.click-ttl-seconds 控制（默认 120 秒）。
+     * <b>答案只在服务端</b>：图片随响应下发，但目标字符的坐标绝不返回前端，
+     * 校验通过后才一次性删除，防止同一挑战被反复兑换令牌。
      */
-    public static final String CAPTCHA_SLIDER_PREFIX = "captcha:slider:";
+    public static final String CAPTCHA_CLICK_PREFIX = "captcha:click:";
+
+    /**
+     * 点选人机校验失败计数：captcha:click:fail:{token} → 次数，TTL 与挑战一致。
+     * 达到 serverpanel.captcha.click-max-attempts（默认 3）即作废挑战，
+     * 强制换一张新图，避免同一张图被无限次试错（人肉枚举坐标）。
+     */
+    public static final String CAPTCHA_CLICK_FAIL_PREFIX = "captcha:click:fail:";
 
     /**
      * 发信令牌：captcha:send:{sendToken} → "1"，TTL 由 serverpanel.captcha
@@ -63,7 +72,7 @@ public final class CacheConstants {
 
     /**
      * 登录令牌：captcha:login:{loginToken} → "1"，TTL 同 send-token-ttl-seconds。
-     * 由 {@code /auth/captcha/slider/verify}（purpose=login）签发，密码登录
+     * 由 {@code /auth/captcha/click/verify}（purpose=login）签发，密码登录
      * {@code /auth/login} 携带它原子消费；与发信令牌（captcha:send:）隔离，
      * 杜绝「邮箱验证码场景拿到的令牌」被重放到「密码登录」场景。
      */
