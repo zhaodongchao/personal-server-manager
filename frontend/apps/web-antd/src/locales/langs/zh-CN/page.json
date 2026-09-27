@@ -2,7 +2,7 @@
   "auth": {
     "login": "登录",
     "register": "注册",
-    "codeLogin": "验证码登录",
+    "codeLogin": "邮箱验证码登录",
     "qrcodeLogin": "二维码登录",
     "forgetPassword": "忘记密码",
     "profile": "个人中心"
@@ -11,5 +11,14 @@
     "title": "概览",
     "analytics": "分析页",
     "workspace": "工作台"
+  },
+  "authentication": {
+    "mobileLogin": "邮箱验证码登录",
+    "codeSubtitle": "请输入账号已绑定的邮箱，查收验证码后登录",
+    "mailCodeSent": "验证码已发送，请查收邮箱（{0} 分钟内有效）",
+    "registerSubtitle": "注册后账号不分配任何角色，业务权限需管理员分配",
+    "registerSuccessDesc": "注册成功，账号已创建；业务权限需管理员在系统管理-用户中分配角色后生效",
+    "usernameRuleTip": "3-30 位字母、数字或下划线",
+    "passwordRuleTip": "密码长度须为 8-64 位"
   }
 }

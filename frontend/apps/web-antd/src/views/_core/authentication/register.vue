@@ -2,25 +2,48 @@
 import type { VbenFormSchema } from '@vben/common-ui';
 import type { Recordable } from '@vben/types';
 
-import { computed, h, ref } from 'vue';
+import { computed, ref } from 'vue';
+import { useRouter } from 'vue-router';
 
 import { AuthenticationRegister, z } from '@vben/common-ui';
 import { $t } from '@vben/locales';
 
+import { registerApi } from '#/api';
+import { useMailAuth } from '#/composables/use-mail-auth';
+
+/**
+ * 自助注册（邮箱验证码方式）。
+ *
+ * 与邮箱登录共用一套验证码体系，区别只在 purpose=register：后端要求注册开关
+ * （serverpanel.register.enabled）开启、且邮箱未被占用。注册成功后账号
+ * **不分配任何角色** —— 能登录、但只看得到个人中心，业务权限由管理员在
+ * 「系统管理-用户」里分配。这是刻意的设计：面板是服务器管理入口，注册入口
+ * 即便开启，也不应让自助账号直接拿到任何运维权限。
+ */
 defineOptions({ name: 'Register' });
 
+const router = useRouter();
+const { sendMailCode } = useMailAuth();
+
 const loading = ref(false);
+
+/** 表单实例：AuthenticationRegister 经 defineExpose 暴露 getFormApi，发码需读取已填邮箱 */
+const formRef = ref<InstanceType<typeof AuthenticationRegister>>();
 
 const formSchema = computed((): VbenFormSchema[] => {
   return [
     {
       component: 'VbenInput',
       componentProps: {
-        placeholder: $t('authentication.usernameTip'),
+        placeholder: $t('authentication.usernameRuleTip'),
       },
       fieldName: 'username',
       label: $t('authentication.username'),
-      rules: z.string().min(1, { message: $t('authentication.usernameTip') }),
+      rules: z
+        .string()
+        .min(3, { message: $t('authentication.usernameRuleTip') })
+        .max(30, { message: $t('authentication.usernameRuleTip') })
+        .regex(/^[a-zA-Z0-9_]+$/, $t('authentication.usernameRuleTip')),
     },
     {
       component: 'VbenInputPassword',
@@ -35,7 +58,10 @@ const formSchema = computed((): VbenFormSchema[] => {
           strengthText: () => $t('authentication.passwordStrength'),
         };
       },
-      rules: z.string().min(1, { message: $t('authentication.passwordTip') }),
+      rules: z
+        .string()
+        .min(8, { message: $t('authentication.passwordRuleTip') })
+        .max(64, { message: $t('authentication.passwordRuleTip') }),
     },
     {
       component: 'VbenInputPassword',
@@ -46,8 +72,7 @@ const formSchema = computed((): VbenFormSchema[] => {
         rules(values) {
           const { password } = values;
           return z
-            .string({ error: $t('authentication.passwordTip') })
-            .min(1, { message: $t('authentication.passwordTip') })
+            .string({ error: $t('authentication.passwordRuleTip') })
             .refine((value) => value === password, {
               message: $t('authentication.confirmPasswordTip'),
             });
@@ -58,38 +83,75 @@ const formSchema = computed((): VbenFormSchema[] => {
       label: $t('authentication.confirmPassword'),
     },
     {
-      component: 'VbenCheckbox',
-      fieldName: 'agreePolicy',
-      renderComponentContent: () => ({
-        default: () =>
-          h('span', [
-            $t('authentication.agree'),
-            h(
-              'a',
-              {
-                class: 'vben-link ml-1 ',
-                href: '',
-              },
-              `${$t('authentication.privacyPolicy')} & ${$t('authentication.terms')}`,
-            ),
-          ]),
-      }),
-      rules: z.boolean().refine((value) => !!value, {
-        message: $t('authentication.agreeTip'),
-      }),
+      component: 'VbenInput',
+      componentProps: {
+        placeholder: $t('authentication.emailTip'),
+      },
+      fieldName: 'email',
+      label: $t('authentication.email'),
+      rules: z
+        .string()
+        .min(1, { message: $t('authentication.emailTip') })
+        .email($t('authentication.emailValidErrorTip')),
+    },
+    {
+      component: 'VbenPinInput',
+      componentProps: {
+        codeLength: 6,
+        createText: (countdown: number) =>
+          countdown > 0
+            ? $t('authentication.sendText', [countdown])
+            : $t('authentication.sendCode'),
+        handleSendCode,
+        maxTime: 60,
+      },
+      fieldName: 'code',
+      label: $t('authentication.code'),
+      rules: z
+        .string({ error: $t('authentication.codeTip', [6]) })
+        .length(6, { message: $t('authentication.codeTip', [6]) }),
     },
   ];
 });
 
-function handleSubmit(value: Recordable<any>) {
-  void value;
+/** 发送注册验证码（失败必须抛出，理由同邮箱登录页：吞异常会误启动倒计时） */
+async function handleSendCode() {
+  const formApi = formRef.value?.getFormApi();
+  const result = await formApi?.validateField('email');
+  if (!result?.valid) {
+    throw new Error('邮箱未通过校验');
+  }
+  const values = await formApi?.getValues();
+  const email = String(values?.email ?? '').trim();
+  await sendMailCode(email, 'register');
+}
+
+async function handleSubmit(value: Recordable<any>) {
+  loading.value = true;
+  try {
+    await registerApi({
+      code: String(value.code ?? ''),
+      email: String(value.email ?? '').trim(),
+      password: String(value.password ?? ''),
+      username: String(value.username ?? '').trim(),
+    });
+    // 注册不自动登录：账号待管理员分配角色，回登录页走邮箱验证码登录
+    await router.push('/auth/login?registered=1');
+  } catch (error) {
+    // 业务错误（如注册未开启 1034、用户名或邮箱已存在 1035）由请求层统一提示
+    console.warn('[mail-auth] 自助注册失败：', error);
+  } finally {
+    loading.value = false;
+  }
 }
 </script>
 
 <template>
   <AuthenticationRegister
+    ref="formRef"
     :form-schema="formSchema"
     :loading="loading"
+    :sub-title="$t('authentication.registerSubtitle')"
     @submit="handleSubmit"
   />
 </template>

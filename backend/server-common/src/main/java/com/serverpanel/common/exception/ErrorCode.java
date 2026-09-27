@@ -41,6 +41,14 @@ public enum ErrorCode {
     AUTH_OAUTH_PROVIDER_BOUND(1024, "当前账号已绑定该平台，请先解绑再重新绑定"),
     AUTH_OAUTH_CALLBACK_FAILED(1025, "第三方授权失败：换取令牌或用户信息异常"),
 
+    // ===== 认证 1xxx（邮箱验证码 1030+） =====
+    MAIL_NOT_CONFIGURED(1030, "邮件服务未配置，邮箱验证码功能不可用"),
+    MAIL_SEND_TOO_FREQUENT(1031, "验证码发送过于频繁，请稍后再试"),
+    MAIL_DAILY_LIMIT_EXCEEDED(1032, "该邮箱今日验证码发送次数已达上限"),
+    MAIL_CODE_INVALID(1033, "验证码错误或已失效"),
+    REGISTER_DISABLED(1034, "注册功能未开启"),
+    EMAIL_OR_USERNAME_EXISTS(1035, "用户名或邮箱已被使用"),
+
     // ===== 系统管理 2xxx =====
     USER_EXISTS(2001, "用户名已存在"),
     ROLE_EXISTS(2002, "角色名或权限字符已存在"),

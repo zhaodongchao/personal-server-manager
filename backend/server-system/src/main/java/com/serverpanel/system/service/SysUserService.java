@@ -73,6 +73,12 @@ public class SysUserService {
                 .eq(SysUser::getUsername, body.getUsername())) > 0) {
             throw new ServiceException(ErrorCode.USER_EXISTS);
         }
+        // V23 起邮箱全表唯一（uk_email）：占用校验前置，避免直撞唯一索引报 500
+        if (body.getEmail() != null && !body.getEmail().isBlank()
+                && userMapper.selectCount(new LambdaQueryWrapper<SysUser>()
+                        .eq(SysUser::getEmail, body.getEmail())) > 0) {
+            throw new ServiceException(ErrorCode.EMAIL_OR_USERNAME_EXISTS, "该邮箱已被其他账号使用");
+        }
         SysUser user = new SysUser();
         user.setUsername(body.getUsername());
         user.setNickname(body.getNickname());
@@ -99,6 +105,15 @@ public class SysUserService {
         if (body.getStatus() != null && body.getStatus() == 0
             && id.equals(LoginHelper.getUserId())) {
             throw new ServiceException(ErrorCode.CANNOT_DELETE_SELF);
+        }
+        // V23 起邮箱全表唯一（uk_email）：变更时校验占用（空值表示清空，无需校验）
+        if (body.getEmail() != null && !body.getEmail().isBlank()) {
+            Long occupied = userMapper.selectCount(new LambdaQueryWrapper<SysUser>()
+                    .eq(SysUser::getEmail, body.getEmail())
+                    .ne(SysUser::getId, id));
+            if (occupied != null && occupied > 0) {
+                throw new ServiceException(ErrorCode.EMAIL_OR_USERNAME_EXISTS, "该邮箱已被其他账号使用");
+            }
         }
         // 改用显式 set 更新：updateById 默认 NOT_NULL 策略会忽略 null 字段，
         // 会让「恢复默认头像」静默失效；显式 set 保证头像三态语义可控。

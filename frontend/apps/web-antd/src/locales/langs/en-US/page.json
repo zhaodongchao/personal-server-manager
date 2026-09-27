@@ -2,7 +2,7 @@
   "auth": {
     "login": "Login",
     "register": "Register",
-    "codeLogin": "Code Login",
+    "codeLogin": "Email Code Login",
     "qrcodeLogin": "Qr Code Login",
     "forgetPassword": "Forget Password",
     "profile": "Profile"
@@ -11,5 +11,14 @@
     "title": "Dashboard",
     "analytics": "Analytics",
     "workspace": "Workspace"
+  },
+  "authentication": {
+    "mobileLogin": "Email Code Login",
+    "codeSubtitle": "Enter the email bound to your account to receive a login code",
+    "mailCodeSent": "Verification code sent, please check your inbox (valid for {0} minutes)",
+    "registerSubtitle": "New accounts get no role; permissions are assigned by the administrator",
+    "registerSuccessDesc": "Registration successful. Permissions take effect after the administrator assigns a role",
+    "usernameRuleTip": "3-30 letters, digits or underscores",
+    "passwordRuleTip": "Password must be 8-64 characters"
   }
 }

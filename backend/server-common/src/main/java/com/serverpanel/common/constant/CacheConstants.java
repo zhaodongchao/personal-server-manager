@@ -30,4 +30,20 @@ public final class CacheConstants {
      * 校验方式：消费时 delete 该 key，返回 false 即已用/过期/伪造。
      */
     public static final String OAUTH_STATE_PREFIX = "oauth:state:";
+
+    /**
+     * 邮箱验证码：mail:code:{purpose}:{email} → 6 位数字码，
+     * 带 TTL（默认 300 秒）；校验用 GETDEL 原子消费（一次性，防重放）。
+     * purpose 取值 login / register，两类码互不通用。
+     */
+    public static final String MAIL_CODE_PREFIX = "mail:code:";
+
+    /** 邮箱发码冷却：mail:cooldown:{purpose}:{email} → 1，TTL 60 秒（同邮箱同场景） */
+    public static final String MAIL_COOLDOWN_PREFIX = "mail:cooldown:";
+
+    /** 邮箱日发码量：mail:daily:{email} → 计数（TTL 24 小时滑动窗口，默认上限 10） */
+    public static final String MAIL_DAILY_PREFIX = "mail:daily:";
+
+    /** 验证码失败计数：mail:fail:{purpose}:{email} → 次数，达到上限（默认 5）作废当前码 */
+    public static final String MAIL_FAIL_PREFIX = "mail:fail:";
 }

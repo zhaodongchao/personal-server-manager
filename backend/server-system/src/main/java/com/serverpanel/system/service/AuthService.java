@@ -8,7 +8,10 @@ import com.serverpanel.common.exception.ErrorCode;
 import com.serverpanel.common.exception.ServiceException;
 import com.serverpanel.framework.security.LoginHelper;
 import com.serverpanel.system.dto.auth.LoginBody;
+import com.serverpanel.system.dto.auth.MailCodeBody;
+import com.serverpanel.system.dto.auth.MailLoginBody;
 import com.serverpanel.system.dto.auth.PasswordBody;
+import com.serverpanel.system.dto.auth.RegisterBody;
 import com.serverpanel.system.dto.auth.UserInfoVO;
 import com.serverpanel.system.dto.auth.UserProfileBody;
 import com.serverpanel.system.entity.SysUser;
@@ -27,7 +30,7 @@ import java.time.LocalDateTime;
 import java.util.Map;
 
 /**
- * 认证服务：登录（防爆破）/ 登出 / 用户信息 / 改密。
+ * 认证服务：登录（防爆破）/ 邮箱验证码登录 / 自助注册 / 登出 / 用户信息 / 改密。
  */
 @Slf4j
 @Service
@@ -40,12 +43,17 @@ public class AuthService {
     private final StringRedisTemplate redisTemplate;
     private final PermissionService permissionService;
     private final AvatarSupport avatarSupport;
+    private final MailCodeService mailCodeService;
 
     @Value("${serverpanel.login.max-fail:5}")
     private int maxFail;
 
     @Value("${serverpanel.login.lock-minutes:15}")
     private int lockMinutes;
+
+    /** 自助注册总开关（默认关闭；新注册账号不分配角色，仅个人中心） */
+    @Value("${serverpanel.register.enabled:false}")
+    private boolean registerEnabled;
 
     /** 二级认证安全窗口（秒）；下限 30 秒在 openSafe 内钳制 */
     @Value("${serverpanel.audit.safe-timeout-seconds:300}")
@@ -104,6 +112,102 @@ public class AuthService {
         StpUtil.logout();
     }
 
+    /**
+     * 发送邮箱验证码（发码前场景校验）：
+     * login 要求邮箱已绑定面板账号（未绑定的邮箱收不到码，也不向其泄露账号存在性）；
+     * register 要求注册开关开启且邮箱未被占用。
+     */
+    public void sendMailCode(MailCodeBody body) {
+        String email = body.getEmail();
+        boolean exists = userMapper.selectCount(new LambdaQueryWrapper<SysUser>()
+                .eq(SysUser::getEmail, email)) > 0;
+        if ("login".equals(body.getPurpose())) {
+            if (!exists) {
+                throw new ServiceException(ErrorCode.AUTH_USER_NOT_FOUND, "该邮箱未绑定面板账号");
+            }
+        } else {
+            if (!registerEnabled) {
+                throw new ServiceException(ErrorCode.REGISTER_DISABLED);
+            }
+            if (exists) {
+                throw new ServiceException(ErrorCode.EMAIL_OR_USERNAME_EXISTS, "该邮箱已被注册");
+            }
+        }
+        mailCodeService.send(email, body.getPurpose());
+    }
+
+    /**
+     * 邮箱验证码登录：校验验证码（purpose=login，一次性消费）→ 按邮箱定位用户 → 建立会话。
+     *
+     * <p>发码环节（MailAuthController /mail/code）已校验邮箱必须绑定面板账号，
+     * 此处用户缺失属边界情况（发码后被删除），按用户不存在处理。
+     * 验证码自带「5 次失败作废 + 60s 冷却 + 日限 10」约束，无需再叠加防爆破计数。
+     */
+    public String mailLogin(MailLoginBody body, HttpServletRequest request) {
+        String email = body.getEmail();
+        mailCodeService.verify(email, "login", body.getCode());
+
+        SysUser user = userMapper.selectOne(
+            new LambdaQueryWrapper<SysUser>().eq(SysUser::getEmail, email));
+        String ip = clientIp(request);
+        if (user == null) {
+            recordLoginLog("mail:" + email, ip, 0, "邮箱验证码登录失败：邮箱未绑定面板账号", request);
+            throw new ServiceException(ErrorCode.AUTH_USER_NOT_FOUND,
+                "该邮箱未绑定面板账号");
+        }
+        if (user.getStatus() == null || user.getStatus() != 1) {
+            recordLoginLog(user.getUsername(), ip, 0, "邮箱验证码登录失败：账号已停用", request);
+            throw new ServiceException(ErrorCode.AUTH_USER_DISABLED);
+        }
+
+        StpUtil.login(user.getId());
+        StpUtil.getSession().set(LoginHelper.KEY_USERNAME, user.getUsername());
+        StpUtil.getSession().set(LoginHelper.KEY_NICKNAME, user.getNickname());
+        user.setLastLoginAt(LocalDateTime.now());
+        user.setLastLoginIp(ip);
+        userMapper.updateById(user);
+        recordLoginLog(user.getUsername(), ip, 1, "邮箱验证码登录成功", request);
+        return StpUtil.getTokenValue();
+    }
+
+    /**
+     * 自助注册（邮箱验证码方式）：开关校验 → 唯一性前置校验 → 校验验证码（一次性消费）→ 落库。
+     *
+     * <p>新账号不分配任何角色（登录后仅个人中心），业务权限由管理员在用户管理中分配；
+     * 并发注册穿透由 uk_username / uk_email 唯一索引兜底（DuplicateKeyException 转 1035）。
+     */
+    public void register(RegisterBody body, HttpServletRequest request) {
+        if (!registerEnabled) {
+            throw new ServiceException(ErrorCode.REGISTER_DISABLED);
+        }
+        String email = body.getEmail();
+        String ip = clientIp(request);
+
+        if (userMapper.selectCount(new LambdaQueryWrapper<SysUser>()
+                .eq(SysUser::getUsername, body.getUsername())) > 0) {
+            throw new ServiceException(ErrorCode.EMAIL_OR_USERNAME_EXISTS, "用户名已被使用");
+        }
+        if (userMapper.selectCount(new LambdaQueryWrapper<SysUser>()
+                .eq(SysUser::getEmail, email)) > 0) {
+            throw new ServiceException(ErrorCode.EMAIL_OR_USERNAME_EXISTS, "该邮箱已被注册");
+        }
+        mailCodeService.verify(email, "register", body.getCode());
+
+        SysUser user = new SysUser();
+        user.setUsername(body.getUsername());
+        user.setNickname(body.getUsername());
+        user.setPassword(passwordEncoder.encode(body.getPassword()));
+        user.setEmail(email);
+        user.setStatus(1);
+        try {
+            userMapper.insert(user);
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            // 并发注册同一用户名/邮箱的极端竞争：唯一索引兜底
+            throw new ServiceException(ErrorCode.EMAIL_OR_USERNAME_EXISTS);
+        }
+        recordLoginLog(body.getUsername(), ip, 1, "自助注册成功（邮箱验证码，未分配角色）", request);
+    }
+
     /** 当前用户信息（Vben 约定字段） */
     public UserInfoVO getUserInfo() {
         long userId = LoginHelper.getUserId();
@@ -139,6 +243,12 @@ public class AuthService {
             user.setNickname(body.getRealName());
         }
         if (body.getEmail() != null) {
+            // V23 起邮箱全表唯一（uk_email）：改绑前校验占用，避免直撞唯一索引报 500
+            if (!body.getEmail().equals(user.getEmail())
+                    && userMapper.selectCount(new LambdaQueryWrapper<SysUser>()
+                            .eq(SysUser::getEmail, body.getEmail())) > 0) {
+                throw new ServiceException(ErrorCode.EMAIL_OR_USERNAME_EXISTS, "该邮箱已被其他账号使用");
+            }
             user.setEmail(body.getEmail());
         }
         if (body.getPhone() != null) {
