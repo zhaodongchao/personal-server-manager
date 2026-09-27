@@ -46,6 +46,8 @@ public class AuthService {
     private final PermissionService permissionService;
     private final AvatarSupport avatarSupport;
     private final MailCodeService mailCodeService;
+    private final CaptchaService captchaService;
+    private final SendGuardService sendGuardService;
 
     @Value("${serverpanel.login.max-fail:5}")
     private int maxFail;
@@ -123,7 +125,16 @@ public class AuthService {
      * login 要求邮箱已绑定面板账号（未绑定的邮箱收不到码，也不向其泄露账号存在性）；
      * register 要求注册开关开启且邮箱未被占用。
      */
-    public void sendMailCode(MailCodeBody body) {
+    /**
+     * 发送邮箱验证码（发码前安全闸门，顺序不可调换）：
+     * ① 消费一次性发信令牌（由人机校验签发，缺失/失效 → 1037/1038）；
+     * ② 来源 IP 限流与封锁（SendGuardService，超额 → 1039）；
+     * ③ 场景前置校验（login 要求邮箱已绑定账号、register 要求注册开关开启且邮箱未占用）。
+     */
+    public void sendMailCode(MailCodeBody body, HttpServletRequest request) {
+        captchaService.consumeSendToken(body.getCaptcha());
+        sendGuardService.checkAndTick(clientIp(request));
+
         String email = body.getEmail();
         boolean exists = userMapper.selectCount(new LambdaQueryWrapper<SysUser>()
                 .eq(SysUser::getEmail, email)) > 0;
@@ -141,6 +152,18 @@ public class AuthService {
             }
         }
         mailCodeService.send(email, body.getPurpose());
+    }
+
+    /**
+     * 注册用户名是否可用（实时查重，供前端 onBlur 提示）。
+     * 仅做存在性判断；格式合法性（3-30 位字母数字下划线）由前端表单规则把关。
+     */
+    public boolean isUsernameAvailable(String username) {
+        if (username == null || username.isBlank()) {
+            return false;
+        }
+        return userMapper.selectCount(new LambdaQueryWrapper<SysUser>()
+                .eq(SysUser::getUsername, username)) == 0;
     }
 
     /**

@@ -24,6 +24,11 @@
     "accountPendingDesc": "Your account was created successfully but no role has been assigned yet, so you cannot access the workspace. Please contact the administrator to assign a role; after that, log out and sign in again.",
     "accountPendingLogout": "Log out",
     "usernameRuleTip": "3-30 letters, digits or underscores",
-    "passwordRuleTip": "Password must be 8-64 characters"
+    "passwordRuleTip": "Password must be 8-64 characters",
+    "captchaTitle": "Please complete human verification",
+    "captchaDesc": "Drag the slider to verify; only after passing can the code be sent",
+    "captchaVerifying": "Verifying…",
+    "captchaVerifyFailed": "Human verification failed, please retry",
+    "usernameTaken": "This username is already taken"
   }
 }

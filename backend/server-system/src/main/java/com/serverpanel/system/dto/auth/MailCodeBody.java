@@ -22,4 +22,11 @@ public class MailCodeBody {
     @NotBlank(message = "场景不能为空")
     @Pattern(regexp = "login|register", message = "场景仅允许 login / register")
     private String purpose;
+
+    /**
+     * 一次性发信令牌（由人机校验 {@code /auth/captcha/slider/verify} 签发）。
+     * 不发 @NotBlank：缺失时由 AuthService 统一返回 1037 CAPTCHA_REQUIRED，
+     * 与「令牌已失效」的 1038 走同一处理口径，前端只需提示「请先完成人机验证」。
+     */
+    private String captcha;
 }

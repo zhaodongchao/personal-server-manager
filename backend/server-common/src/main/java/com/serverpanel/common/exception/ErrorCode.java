@@ -49,6 +49,9 @@ public enum ErrorCode {
     REGISTER_DISABLED(1034, "注册功能未开启"),
     EMAIL_OR_USERNAME_EXISTS(1035, "用户名或邮箱已被使用"),
     REGISTER_EMAIL_DOMAIN_NOT_ALLOWED(1036, "该邮箱域名不在允许注册的范围内"),
+    CAPTCHA_REQUIRED(1037, "请先完成人机验证"),
+    CAPTCHA_INVALID(1038, "人机验证已失效或未完成，请重新验证"),
+    SEND_GUARD_BLOCKED(1039, "发送请求过于频繁，已被临时限制，请稍后再试"),
 
     // ===== 系统管理 2xxx =====
     USER_EXISTS(2001, "用户名已存在"),

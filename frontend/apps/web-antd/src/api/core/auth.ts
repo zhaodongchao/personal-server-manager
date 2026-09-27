@@ -32,6 +32,23 @@ export namespace AuthApi {
     email: string;
     /** login=登录（要求邮箱已绑定面板账号）；register=注册（要求邮箱未被占用） */
     purpose: 'login' | 'register';
+    /** 人机校验通过后下发的发信令牌（一次性） */
+    captcha: string;
+  }
+
+  /** 滑块挑战令牌 */
+  export interface CaptchaTokenResult {
+    captchaToken: string;
+  }
+
+  /** 发信令牌（人机校验通过后下发，/mail/code 携带） */
+  export interface SendTokenResult {
+    sendToken: string;
+  }
+
+  /** 用户名可用性查询结果 */
+  export interface CheckUsernameResult {
+    available: boolean;
   }
 
   /** 邮箱验证码登录参数 */
@@ -90,11 +107,36 @@ export async function getMailEnabledApi() {
 /**
  * 发送邮箱验证码。
  *
+ * 必须先通过滑块人机校验拿到发信令牌（captcha）再调用本接口，否则后端返回 1037/1038；
  * 场景前置校验在后端（login 要求邮箱已绑定账号、register 要求注册开关开启且邮箱未占用），
  * 冷却 / 日限 / 一次性消费同样由后端 MailCodeService 承担，前端不做任何计数。
  */
 export async function sendMailCodeApi(data: AuthApi.MailCodeParams) {
   return requestClient.post('/auth/mail/code', data);
+}
+
+/** 领取滑块人机校验挑战令牌 */
+export async function getCaptchaTokenApi() {
+  return requestClient.post<AuthApi.CaptchaTokenResult>('/auth/captcha/slider');
+}
+
+/** 校验滑块并换取一次性发信令牌（dragSeconds 为拖拽时长，秒） */
+export async function verifyCaptchaApi(
+  captchaToken: string,
+  dragSeconds: number,
+) {
+  return requestClient.post<AuthApi.SendTokenResult>('/auth/captcha/slider/verify', {
+    captchaToken,
+    dragSeconds,
+  });
+}
+
+/** 注册用户名实时查重 */
+export async function checkUsernameApi(username: string) {
+  return requestClient.get<AuthApi.CheckUsernameResult>(
+    '/auth/register/check-username',
+    { params: { username } },
+  );
 }
 
 /** 邮箱验证码登录（返回 accessToken） */

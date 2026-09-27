@@ -9,7 +9,10 @@ import { $t } from '@vben/locales';
 
 import { mailLoginApi } from '#/api';
 import { useMailAuth } from '#/composables/use-mail-auth';
+import { useMailCaptcha } from '#/composables/use-mail-captcha';
 import { useAuthStore } from '#/store';
+
+import MailCaptchaModal from './components/mail-captcha-modal.vue';
 
 /**
  * 邮箱验证码登录。
@@ -26,6 +29,15 @@ defineOptions({ name: 'CodeLogin' });
 
 const authStore = useAuthStore();
 const { sendMailCode } = useMailAuth();
+const {
+  open: captchaOpen,
+  verifying: captchaVerifying,
+  error: captchaError,
+  nonce: captchaNonce,
+  openCaptcha,
+  onSuccess: onCaptchaSuccess,
+  close: closeCaptcha,
+} = useMailCaptcha();
 
 const loading = ref(false);
 
@@ -81,7 +93,9 @@ async function handleSendCode() {
   }
   const values = await formApi?.getValues();
   const email = String(values?.email ?? '').trim();
-  await sendMailCode(email, 'login');
+  // 先通过滑块人机校验换取发信令牌，再发码（后端缺令牌返回 1037/1038）
+  const sendToken = await openCaptcha();
+  await sendMailCode(email, 'login', sendToken);
 }
 
 async function handleSubmit(values: Recordable<any>) {
@@ -109,5 +123,14 @@ async function handleSubmit(values: Recordable<any>) {
     :loading="loading"
     :sub-title="$t('authentication.codeSubtitle')"
     @submit="handleSubmit"
+  />
+
+  <MailCaptchaModal
+    :error="captchaError"
+    :nonce="captchaNonce"
+    :open="captchaOpen"
+    :verifying="captchaVerifying"
+    @close="closeCaptcha"
+    @success="onCaptchaSuccess"
   />
 </template>

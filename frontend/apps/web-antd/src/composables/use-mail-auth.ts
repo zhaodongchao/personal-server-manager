@@ -66,8 +66,12 @@ export function useMailAuth() {
    * 60 秒倒计时，吞掉异常会让用户以为已发送、白白干等（后端冷却 / 日限同样给出错误码）。
    * 业务错误提示由 request.ts 统一负责，这里只补成功提示。
    */
-  async function sendMailCode(email: string, purpose: 'login' | 'register') {
-    await sendMailCodeApi({ email, purpose });
+  async function sendMailCode(
+    email: string,
+    purpose: 'login' | 'register',
+    captcha?: string,
+  ) {
+    await sendMailCodeApi({ email, purpose, captcha: captcha ?? '' });
     message.success($t('authentication.mailCodeSent', ['5']));
   }
 

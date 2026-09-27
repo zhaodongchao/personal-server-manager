@@ -46,4 +46,30 @@ public final class CacheConstants {
 
     /** 验证码失败计数：mail:fail:{purpose}:{email} → 次数，达到上限（默认 5）作废当前码 */
     public static final String MAIL_FAIL_PREFIX = "mail:fail:";
+
+    /**
+     * 滑块人机校验挑战：captcha:slider:{token} → "1"，TTL 由 serverpanel.captcha
+     * .slider-ttl-seconds 控制（默认 120 秒）。校验（verify）时一次性消费，
+     * 防止同一挑战被反复兑换发信令牌。
+     */
+    public static final String CAPTCHA_SLIDER_PREFIX = "captcha:slider:";
+
+    /**
+     * 发信令牌：captcha:send:{sendToken} → "1"，TTL 由 serverpanel.captcha
+     * .send-token-ttl-seconds 控制（默认 60 秒）。/mail/code 消费它后才发码，
+     * 单次使用（GETDEL 原子消费），保证「先过人机校验、再发邮件」不可绕过。
+     */
+    public static final String CAPTCHA_SEND_PREFIX = "captcha:send:";
+
+    /** 发信安全拦截：send:ip:min:{ip} → 计数，TTL 60 秒（每分钟窗口） */
+    public static final String SEND_GUARD_IP_MIN = "send:ip:min:";
+
+    /** 发信安全拦截：send:ip:hour:{ip} → 计数，TTL 3600 秒（每小时窗口） */
+    public static final String SEND_GUARD_IP_HOUR = "send:ip:hour:";
+
+    /**
+     * 发信安全拦截封锁标记：send:ip:block:{ip} → 1，TTL 由 serverpanel.send-guard
+     * .ip-block-minutes 控制。存在即拒绝该 IP 的发码请求（返回 1039），并提示剩余分钟。
+     */
+    public static final String SEND_GUARD_IP_BLOCK = "send:ip:block:";
 }

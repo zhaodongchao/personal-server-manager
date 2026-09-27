@@ -7,9 +7,13 @@ import { useRouter } from 'vue-router';
 
 import { AuthenticationRegister, z } from '@vben/common-ui';
 import { $t } from '@vben/locales';
+import { message } from 'ant-design-vue';
 
-import { registerApi } from '#/api';
+import { checkUsernameApi, registerApi } from '#/api';
 import { useMailAuth } from '#/composables/use-mail-auth';
+import { useMailCaptcha } from '#/composables/use-mail-captcha';
+
+import MailCaptchaModal from './components/mail-captcha-modal.vue';
 
 /**
  * 自助注册（邮箱验证码方式）。
@@ -24,6 +28,15 @@ defineOptions({ name: 'Register' });
 
 const router = useRouter();
 const { sendMailCode, allowedEmailDomains, loadMailEnabled } = useMailAuth();
+const {
+  open: captchaOpen,
+  verifying: captchaVerifying,
+  error: captchaError,
+  nonce: captchaNonce,
+  openCaptcha,
+  onSuccess: onCaptchaSuccess,
+  close: closeCaptcha,
+} = useMailCaptcha();
 
 const loading = ref(false);
 
@@ -58,6 +71,24 @@ function checkEmailDomain(email: string) {
   }
 }
 
+/** 用户名失焦实时查重（仅提示，不阻断输入；最终唯一性由注册接口兜底） */
+async function checkUsernameAvailability() {
+  const formApi = formRef.value?.getFormApi();
+  const values = await formApi?.getValues();
+  const username = String(values?.username ?? '').trim();
+  if (!username || !/^[a-zA-Z0-9_]{3,30}$/.test(username)) {
+    return;
+  }
+  try {
+    const { available } = await checkUsernameApi(username);
+    if (!available) {
+      message.error($t('authentication.usernameTaken'));
+    }
+  } catch {
+    // 静默：查重接口异常不应阻断用户正常输入
+  }
+}
+
 /** 表单实例：AuthenticationRegister 经 defineExpose 暴露 getFormApi，发码需读取已填邮箱 */
 const formRef = ref<InstanceType<typeof AuthenticationRegister>>();
 
@@ -67,6 +98,7 @@ const formSchema = computed((): VbenFormSchema[] => {
       component: 'VbenInput',
       componentProps: {
         placeholder: $t('authentication.usernameRuleTip'),
+        onBlur: checkUsernameAvailability,
       },
       fieldName: 'username',
       label: $t('authentication.username'),
@@ -156,7 +188,9 @@ async function handleSendCode() {
   const email = String(values?.email ?? '').trim();
   // 域名白名单（如配置）先在客户端拦截，避免无谓的邮件发送与冷却消耗
   checkEmailDomain(email);
-  await sendMailCode(email, 'register');
+  // 先通过滑块人机校验换取发信令牌，再发码（后端缺令牌返回 1037/1038）
+  const sendToken = await openCaptcha();
+  await sendMailCode(email, 'register', sendToken);
 }
 
 async function handleSubmit(value: Recordable<any>) {
@@ -194,5 +228,14 @@ async function handleSubmit(value: Recordable<any>) {
     >
       {{ emailDomainTip }}
     </p>
+
+    <MailCaptchaModal
+      :error="captchaError"
+      :nonce="captchaNonce"
+      :open="captchaOpen"
+      :verifying="captchaVerifying"
+      @close="closeCaptcha"
+      @success="onCaptchaSuccess"
+    />
   </div>
 </template>

@@ -31,6 +31,8 @@ public class SaTokenConfigure implements WebMvcConfigurer {
                         "/api/v1/auth/mail/code",
                         "/api/v1/auth/mail/login",
                         "/api/v1/auth/register",
+                        // 滑块人机校验：slider 下发与 verify 均免登录放行
+                        "/api/v1/auth/captcha/**",
                         // 第三方登录：providers/authorize/login 免登录放行
                         //（authorize 的 intent=bind 在 OAuthService 内显式 checkLogin）；
                         // bind/bindings/binding 不放行，保持登录拦截。

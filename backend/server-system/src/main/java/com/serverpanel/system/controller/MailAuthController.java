@@ -15,10 +15,12 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
 
 /**
@@ -58,13 +60,27 @@ public class MailAuthController {
     }
 
     /**
-     * 发送邮箱验证码。login 场景要求邮箱已绑定面板账号、register 场景要求注册开关开启
-     * 且邮箱未被占用 —— 场景前置校验在 AuthService.sendMailCode。
+     * 发送邮箱验证码。安全闸门（人机校验令牌消费 + 来源 IP 限流/封锁）与场景前置校验
+     * 均在 AuthService.sendMailCode 内按顺序执行，详见其方法注释。
      */
     @PostMapping("/mail/code")
-    public R<Void> code(@Valid @RequestBody MailCodeBody body) {
-        authService.sendMailCode(body);
+    public R<Void> code(@Valid @RequestBody MailCodeBody body, HttpServletRequest request) {
+        authService.sendMailCode(body, request);
         return R.ok();
+    }
+
+    /**
+     * 注册用户名实时查重（供前端 onBlur 提示）。
+     *
+     * <p>仅返回是否可用：格式非法（非 3-30 位字母数字下划线）直接视为不可用，
+     * 既不查库也避免被当作枚举入口；最终唯一性仍由注册接口的 uk_username 兜底。
+     */
+    @GetMapping("/register/check-username")
+    public R<Map<String, Boolean>> checkUsername(
+            @NotBlank @RequestParam("username") String username) {
+        boolean available = username.matches("^[a-zA-Z0-9_]{3,30}$")
+                && authService.isUsernameAvailable(username);
+        return R.ok(Map.of("available", available));
     }
 
     /** 邮箱验证码登录（返回 accessToken） */
