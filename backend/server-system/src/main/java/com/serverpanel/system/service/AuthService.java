@@ -171,6 +171,17 @@ public class AuthService {
     }
 
     /**
+     * 自助注册总开关是否开启（serverpanel.register.enabled）。
+     *
+     * <p>单独暴露是为了让 /auth/mail/enabled 一次返回两个开关：注册入口必须同时满足
+     * 「SMTP 已配置」与「注册已开放」，前端若只拿邮件可用性判断，会放出点了必然
+     * 报 1034 的注册按钮。
+     */
+    public boolean registerEnabled() {
+        return registerEnabled;
+    }
+
+    /**
      * 自助注册（邮箱验证码方式）：开关校验 → 唯一性前置校验 → 校验验证码（一次性消费）→ 落库。
      *
      * <p>新账号不分配任何角色（登录后仅个人中心），业务权限由管理员在用户管理中分配；

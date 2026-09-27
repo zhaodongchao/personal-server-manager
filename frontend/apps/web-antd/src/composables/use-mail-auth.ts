@@ -1,4 +1,4 @@
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 
 import { $t } from '@vben/locales';
 import { message } from 'ant-design-vue';
@@ -13,19 +13,38 @@ import { getMailEnabledApi, sendMailCodeApi } from '#/api';
  * 口径必须一致，分散实现很容易出现「入口显示但注册页发不了码」这类不对称缺陷。
  */
 export function useMailAuth() {
-  /** 后端是否已配置 SMTP（未配置时邮箱登录/注册入口整块隐藏） */
+  /** 后端是否已配置 SMTP（未配置时邮箱验证码登录入口隐藏） */
   const mailEnabled = ref(false);
+  /** 自助注册总开关 serverpanel.register.enabled（独立于 SMTP） */
+  const registerEnabled = ref(false);
   const loading = ref(false);
+
+  /**
+   * 注册入口可用性：必须 SMTP 就绪<b>且</b>注册开关已开。
+   *
+   * 两个开关缺一不可 —— 没配 SMTP 时验证码根本发不出去，注册链路必然断在第一步；
+   * 只按 mailEnabled 判断会放出点了必然报 1034 的按钮。与 OAuth 一致，
+   * 缺任一条件都是「不渲染」，不显示误导性的置灰态。
+   */
+  const registerAvailable = computed(
+    () => mailEnabled.value && registerEnabled.value,
+  );
 
   async function loadMailEnabled() {
     loading.value = true;
     try {
-      mailEnabled.value = (await getMailEnabledApi())?.enabled ?? false;
+      const result = await getMailEnabledApi();
+      mailEnabled.value = result?.enabled ?? false;
+      registerEnabled.value = result?.registerEnabled ?? false;
       if (!mailEnabled.value) {
         // 与 OAuth 同口径：界面表现与「接口失败」完全一致，靠日志区分。
         // 打出这一行 = 接口通了但后端没配 SMTP，去查 spring.mail.host / serverpanel.mail.from
         console.info(
           '[mail-auth] 后端未启用邮件服务，邮箱验证码登录与自助注册入口不渲染',
+        );
+      } else if (!registerEnabled.value) {
+        console.info(
+          '[mail-auth] 邮件服务已就绪但自助注册未开启（PANEL_REGISTER_ENABLED），注册入口不渲染',
         );
       }
     } catch (error) {
@@ -53,6 +72,8 @@ export function useMailAuth() {
     loadMailEnabled,
     loading,
     mailEnabled,
+    registerAvailable,
+    registerEnabled,
     sendMailCode,
   };
 }

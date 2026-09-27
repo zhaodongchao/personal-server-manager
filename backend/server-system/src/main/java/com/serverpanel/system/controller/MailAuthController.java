@@ -40,10 +40,18 @@ public class MailAuthController {
     private final MailCodeService mailCodeService;
     private final MailSenderService mailSenderService;
 
-    /** 邮箱验证码功能是否可用（SMTP 已配置）；前端据此显隐邮箱登录入口 */
+    /**
+     * 邮箱认证可用性快照：SMTP 是否配置 + 自助注册是否开放。
+     *
+     * <p>刻意返回两个字段而非合成一个：邮箱登录只依赖 SMTP，注册页却要求二者同时为真
+     * （没配 SMTP 就发不出验证码，注册链路必然断在第一步）。合成一个布尔值前端无法区分
+     * 「该不该显示注册入口」与「该不该显示邮箱登录入口」。
+     */
     @GetMapping("/mail/enabled")
     public R<Map<String, Boolean>> enabled() {
-        return R.ok(Map.of("enabled", mailSenderService.enabled()));
+        return R.ok(Map.of(
+                "enabled", mailSenderService.enabled(),
+                "registerEnabled", authService.registerEnabled()));
     }
 
     /**

@@ -17,7 +17,7 @@ defineOptions({ name: 'Login' });
 
 const authStore = useAuthStore();
 const route = useRoute();
-const { loadMailEnabled, mailEnabled } = useMailAuth();
+const { loadMailEnabled, mailEnabled, registerAvailable } = useMailAuth();
 
 onMounted(() => {
   loadMailEnabled();
@@ -64,14 +64,15 @@ const formSchema = computed((): VbenFormSchema[] => {
 <template>
   <!--
     二维码登录无后端支撑（框架 demo 空壳），扫码场景统一由第三方 OAuth 承担；
-    邮箱验证码登录与自助注册均依赖 SMTP，按后端配置动态显隐（未配置时入口不出现）。
+    邮箱验证码登录依赖 SMTP，自助注册还要额外依赖 serverpanel.register.enabled，
+    两者都由后端 /auth/mail/enabled 决定，未就绪时入口不出现。
   -->
   <AuthenticationLogin
     :form-schema="formSchema"
     :loading="authStore.loginLoading"
     :show-code-login="mailEnabled"
     :show-qrcode-login="false"
-    :show-register="mailEnabled"
+    :show-register="registerAvailable"
     @submit="authStore.authLogin"
   >
     <!--

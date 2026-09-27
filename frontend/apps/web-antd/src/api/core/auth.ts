@@ -17,9 +17,12 @@ export namespace AuthApi {
     status: number;
   }
 
-  /** 邮箱验证码功能可用性（SMTP 是否已在后端配置） */
+  /** 邮箱认证可用性：SMTP 是否配置 + 自助注册是否开放（两个开关相互独立） */
   export interface MailEnabledResult {
+    /** SMTP 与发件人均已配置 —— 决定「邮箱验证码登录」入口 */
     enabled: boolean;
+    /** serverpanel.register.enabled —— 与 enabled 共同决定「创建账号」入口 */
+    registerEnabled: boolean;
   }
 
   /** 发送邮箱验证码参数 */
@@ -70,9 +73,12 @@ export async function safeApi(password: string) {
 }
 
 /**
- * 邮箱验证码功能是否可用（SMTP 已配置）。
+ * 邮箱认证能力是否可用。
  *
- * 免登录接口：登录页据此显隐「邮箱验证码登录」与「创建账号」入口 ——
+ * 免登录接口，一次返回两个独立开关：
+ * - enabled：SMTP 与发件人是否就绪 → 决定「邮箱验证码登录」入口；
+ * - registerEnabled：serverpanel.register.enabled → 与 enabled 共同决定「创建账号」入口。
+ *
  * 沿用第三方登录「按配置启用」的口径，后端没配 SMTP 时入口直接不出现。
  */
 export async function getMailEnabledApi() {

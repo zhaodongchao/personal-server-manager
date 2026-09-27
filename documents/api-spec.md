@@ -263,8 +263,14 @@ POST /api/v1/auth/safe
 ### 11. 邮箱验证码登录与自助注册 `/api/v1/auth`
 
 依赖 SMTP：只有 `spring.mail.host` 与 `serverpanel.mail.from` 配置齐全，邮件功能才可用。
-**按配置启用**（与第三方登录同口径）—— `GET /auth/mail/enabled` 返回 `false` 时，前端隐藏
-「邮箱验证码登录」与「创建账号」入口，发码 / 登录 / 注册接口也会以 `1030` 直接拒绝。
+**按配置启用**（与第三方登录同口径）—— 未配置时入口不渲染，发码 / 登录接口以 `1030` 直接拒绝。
+
+**两个独立开关决定入口显隐**，由 `GET /auth/mail/enabled` 一次性返回，前端不做本地推导：
+
+| 入口 | 生效条件 | 说明 |
+| ---- | ---- | ---- |
+| 邮箱验证码登录 | `enabled = true` | 只依赖 SMTP 与发件人配置 |
+| 创建账号（注册） | `enabled` **且** `registerEnabled` 均为 true | 没配 SMTP 就发不出验证码，注册链路必然断在第一步 |
 
 **账号策略**：邮箱验证码登录只认 `sys_user.email` 上**已存在**的邮箱（用户在个人中心绑定，
 或注册时登记）；自助注册默认关闭（`serverpanel.register.enabled=false`），注册成功的新账号
@@ -283,7 +289,7 @@ POST /api/v1/auth/safe
 
 | 方法 | 路径 | 认证 | 说明 |
 | ---- | ---- | ---- | ---- |
-| GET | `/auth/mail/enabled` | 免登录 | 返回 `{enabled}`：SMTP 是否可用 |
+| GET | `/auth/mail/enabled` | 免登录 | 返回 `{enabled, registerEnabled}`：SMTP 是否就绪 / 自助注册是否开放。注册类接口各自再校验一次开关，`registerEnabled=false` 时返回 `1034` |
 | POST | `/auth/mail/code` | 免登录 | body `{email, purpose}`（`purpose` ∈ `login\|register`）。login 要求邮箱已绑定账号（`1005`）；register 要求注册开关开启且邮箱未被占用（`1034`/`1035`） |
 | POST | `/auth/mail/login` | 免登录 | body `{email, code}` → `{accessToken}`；用户停用 `1003`、验证码错 `1033` |
 | POST | `/auth/register` | 免登录 | body `{username, password, email, code}` → 创建账号，成功不返回 token（需去登录页） |
