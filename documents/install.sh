@@ -44,6 +44,16 @@ Environment="REDIS_PASSWORD=${REDIS_PASSWORD:-}"
 Environment="PANEL_MYSQL_ADMIN_USER=${PANEL_MYSQL_ADMIN_USER:-root}"
 Environment="PANEL_MYSQL_ADMIN_PASSWORD=${PANEL_MYSQL_ADMIN_PASSWORD:-}"
 Environment="PANEL_FILE_ROOTS=${PANEL_FILE_ROOTS:-/www,/srv,/var/www}"
+# 邮箱验证码登录 / 自助注册：MAIL_* 决定 SMTP（MAIL_HOST 为空则该功能整体降级），
+# PANEL_MAIL_FROM 决定发件人（须与 SMTP 账号一致），PANEL_REGISTER_ENABLED 是否开放自助注册。
+# 数值/布尔项在 shell 侧就给默认值，避免 systemd 注入空串导致类型转换失败。
+Environment="MAIL_HOST=${MAIL_HOST:-}"
+Environment="MAIL_PORT=${MAIL_PORT:-465}"
+Environment="MAIL_USERNAME=${MAIL_USERNAME:-}"
+Environment="MAIL_PASSWORD=${MAIL_PASSWORD:-}"
+Environment="MAIL_SSL=${MAIL_SSL:-true}"
+Environment="PANEL_MAIL_FROM=${PANEL_MAIL_FROM:-}"
+Environment="PANEL_REGISTER_ENABLED=${PANEL_REGISTER_ENABLED:-false}"
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=1048576
@@ -63,3 +73,12 @@ echo ""
 echo "安装完成。"
 echo "访问：http://<host>:${SERVER_PORT:-8080}/ （默认账号 admin / Admin@123）"
 echo "日志：journalctl -u $SERVICE_NAME -f"
+echo ""
+echo "后续改配置建议：sudo systemctl edit $SERVICE_NAME（写 [Service] Environment=...），"
+echo "  生成 override 文件 —— 直接改本服务单元会被重跑 install.sh 覆盖。"
+if [ -n "${MAIL_HOST:-}" ]; then
+  echo "邮箱验证码登录：已启用（SMTP ${MAIL_HOST}）；自助注册：${PANEL_REGISTER_ENABLED:-false}"
+else
+  echo "邮箱验证码登录：未配置 MAIL_HOST，已降级（登录页不渲染入口）。"
+  echo "  补上 MAIL_HOST / MAIL_USERNAME / MAIL_PASSWORD / PANEL_MAIL_FROM 后重跑本脚本即可。"
+fi
