@@ -40,7 +40,7 @@
 | 区间 | 模块 | 常见码 |
 | ---- | ---- | ---- |
 | 0 / 4xx / 5xx | 通用 | `0` 成功、`400` 参数、`401` 未登录、`403` 无权限、`404` 不存在、`500` 内部错误 |
-| 1xxx | 认证 | `1001` 账号或密码错误、`1002` 失败锁定、`1003` 停用、`1004` 原密码错、`1010` 敏感操作需先完成二级认证（step-up）、`1020` 第三方平台未启用、`1021` 授权状态失效或已使用、`1022` 第三方账号未绑定、`1023` 第三方账号已被他人绑定、`1024` 当前账号已绑定该平台、`1025` 第三方授权失败、`1030` 邮件服务未配置、`1031` 验证码发送过于频繁、`1032` 超出每日发送上限、`1033` 验证码错误或已失效、`1034` 注册功能未开启、`1035` 用户名或邮箱已被使用、`1036` 邮箱域名不在允许注册范围内 |
+| 1xxx | 认证 | `1001` 账号或密码错误、`1002` 失败锁定、`1003` 停用、`1004` 原密码错、`1010` 敏感操作需先完成二级认证（step-up）、`1020` 第三方平台未启用、`1021` 授权状态失效或已使用、`1022` 第三方账号未绑定、`1023` 第三方账号已被他人绑定、`1024` 当前账号已绑定该平台、`1025` 第三方授权失败、`1030` 邮件服务未配置、`1031` 验证码发送过于频繁、`1032` 超出每日发送上限、`1033` 验证码错误或已失效、`1034` 注册功能未开启、`1035` 用户名或邮箱已被使用、`1036` 邮箱域名不在允许注册范围内、`1037` 请先完成人机验证、`1038` 人机验证已失效或未完成、`1039` 发送请求过于频繁已被临时限制 |
 | 2xxx | 系统管理 | `2001` 用户已存在、`2002` 角色已存在、`2003` 内置数据、`2004` 不能删自己、`2005` 有子菜单、`2006` 角色在用、`2007/2008` 字典重复、`2009` 参数键重复 |
 | 3xxx | 监控 | `3001` 采集器未就绪 |
 | 4xxx | 文件 | `4001` 路径越权、`4002` 目标已存在、`4003` 源路径不存在、`4004` 根目录受限、`4005` 文件过大、`4006` 非文本、`4007` 压缩格式不支持、`4008` 回收站记录失效、`4009` 权限非法、`4010` 目录非空 |
@@ -282,6 +282,25 @@ POST /api/v1/auth/safe
 **邮箱域名白名单**（可选）：`serverpanel.register.allowed-email-domains` 逗号分隔，留空 = 不限制。
 非空时，发码（register 分支）与注册接口均校验邮箱域名，不在名单返回 `1036`。
 
+**发送验证码前的人机校验（滑块）**：`/auth/mail/code` 必须携带一次性发信令牌 `captcha`，
+否则返回 `1037`；令牌已过期 / 已用过返回 `1038`。令牌由滑块校验签发，流程：
+
+1. `POST /auth/captcha/slider` → 领取挑战令牌 `captchaToken`；
+2. 前端滑块拖动完成，把拖拽时长（秒）回传 `POST /auth/captcha/slider/verify`；
+3. 后端校验挑战未过期 / 未用过、且 `拖拽时长 ≥ min-drag-seconds`（排除「瞬间置位」脚本），
+   通过则签发一次性发信令牌 `sendToken`（TTL 60s，原子消费）；
+4. 调用 `/auth/mail/code` 时 `captcha = sendToken`。
+
+滑块是交互式人机校验（抬高自动化门槛），真正的抗爆破 / 防轰炸由下方 **发信安全拦截** 承担。
+
+**发信安全拦截（SendGuard，防邮件轰炸 / 账号枚举）**：`/auth/mail/code` 在「人机校验通过之后、
+实际发码之前」按**来源 IP** 做滑动窗口限流与临时封锁（配置见下表），命中返回 `1039`：
+每分钟上限用于平滑限流，每小时上限触发临时封锁（默认 30 分钟），期间该 IP 全部发码请求拒绝。
+
+**注册用户名实时查重**：`GET /auth/register/check-username?username=xxx` 返回 `{available}`，
+供注册页 onBlur 提示；格式非法直接视为不可用（不查库，也不作枚举入口）。最终唯一性仍由
+`uk_username` 在注册接口兜底（`1035`）。
+
 **验证码安全**（全部由后端 `MailCodeService` 承担，前端不参与计数）：
 
 | 机制 | 取值 | 说明 |
@@ -296,12 +315,26 @@ POST /api/v1/auth/safe
 | 方法 | 路径 | 认证 | 说明 |
 | ---- | ---- | ---- | ---- |
 | GET | `/auth/mail/enabled` | 免登录 | 返回 `{enabled, registerEnabled, allowedEmailDomains}`：SMTP 是否就绪 / 自助注册是否开放 / 允许注册的邮箱域名（空数组=不限制）。注册类接口各自再校验一次开关，`registerEnabled=false` 时返回 `1034` |
-| POST | `/auth/mail/code` | 免登录 | body `{email, purpose}`（`purpose` ∈ `login\|register`）。login 要求邮箱已绑定账号（`1005`）；register 要求注册开关开启且邮箱未被占用（`1034`/`1035`），命中域名白名单时返回 `1036` |
+| POST | `/auth/captcha/slider` | 免登录 | 领取滑块挑战令牌 `captchaToken`（Redis 登记，TTL `slider-ttl-seconds`） |
+| POST | `/auth/captcha/slider/verify` | 免登录 | body `{captchaToken, dragSeconds}` → `{sendToken}`；校验挑战未过期 / 未用过且拖拽时长达标，签发一次性发信令牌（`1038` 校验失败） |
+| GET | `/auth/register/check-username` | 免登录 | query `username` → `{available}`；格式非法直接 `false`（不查库） |
+| POST | `/auth/mail/code` | 免登录 | body `{email, purpose, captcha}`（`purpose` ∈ `login\|register`）。**`captcha` 为必填的发信令牌**：缺失 `1037`、失效/已用 `1038`；同时受 SendGuard 按 IP 限流/封锁约束（`1039`）。login 要求邮箱已绑定账号（`1005`）；register 要求注册开关开启且邮箱未被占用（`1034`/`1035`），命中域名白名单时返回 `1036` |
 | POST | `/auth/mail/login` | 免登录 | body `{email, code}` → `{accessToken}`；用户停用 `1003`、验证码错 `1033` |
 | POST | `/auth/register` | 免登录 | body `{username, password, email, code}` → 创建账号，成功不返回 token（需去登录页） |
 
 > 注册接口**刻意不加** `@Audit`：审计切面会把入参 JSON 落库，注册体含新密码。
 > 注册事件由 `AuthService` 写入 `sys_login_log`（message 标注「自助注册成功」）。
+
+**相关配置项**（位于 `application.yml` 的 `serverpanel` 下，均可用同名环境变量覆盖）：
+
+| 配置项 | 环境变量 | 默认 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `captcha.slider-ttl-seconds` | `PANEL_CAPTCHA_SLIDER_TTL` | `120` | 滑块挑战令牌有效期（秒） |
+| `captcha.send-token-ttl-seconds` | `PANEL_CAPTCHA_SEND_TOKEN_TTL` | `60` | 一次性发信令牌有效期（秒） |
+| `captcha.min-drag-seconds` | `PANEL_CAPTCHA_MIN_DRAG` | `0.3` | 拖拽时长下限（秒），低于视为「瞬间置位」非人类操作 |
+| `send-guard.ip-limit-per-minute` | `PANEL_SEND_GUARD_IP_PM` | `5` | 单 IP 每分钟发码上限（超出不封锁，仅平滑限流） |
+| `send-guard.ip-limit-per-hour` | `PANEL_SEND_GUARD_IP_PH` | `30` | 单 IP 每小时发码上限（超出触发临时封锁） |
+| `send-guard.ip-block-minutes` | `PANEL_SEND_GUARD_BLOCK_MIN` | `30` | 触发后对该 IP 的封锁时长（分钟） |
 > V23 迁移为 `sys_user.email` 加了唯一索引 `uk_email`，个人中心改邮箱 / 管理端创建用户撞重复时返回 `1035`。
 
 ## 三、系统管理 `/api/v1/system`

@@ -137,3 +137,39 @@ curl -X POST http://localhost:8080/api/v1/auth/mail/code \
 明确告知「账号已创建，请联系管理员分配角色，分配后退出重登」。管理员在
 「系统管理-用户」分配角色后，用户退出重新登录即可正常进入系统。该页为核心路由，
 不受权限拦截影响，未分配角色也能稳定打开。
+
+---
+
+## 7. 发送验证码前的人机校验（滑块）与发信安全拦截
+
+发送邮箱验证码前必须经过**滑块人机校验**，并对来源 IP 做**限流与临时封锁**，防止脚本
+批量刷邮件 / 枚举账号。
+
+### 7.1 滑块人机校验流程
+
+1. 点击「发送验证码」→ 弹出滑块弹窗，并 `POST /auth/captcha/slider` 领取挑战令牌 `captchaToken`；
+2. 拖动滑块到终点（组件回传拖拽时长，秒）；
+3. `POST /auth/captcha/slider/verify` 校验挑战未过期/未用过、且拖拽时长 ≥ 下限
+   （排除「瞬间置位」脚本），通过即签发一次性发信令牌 `sendToken`（60 秒有效）；
+4. 前端自动带上 `sendToken` 调 `/auth/mail/code` 发码。
+
+> 滑块是**交互式人机校验**，主要价值在抬高自动化门槛；真正的抗爆破/防轰炸由 7.2 的
+> SendGuard 承担。缺令牌（1037）或令牌失效/已用（1038）都会被拒绝，无法绕过。
+
+### 7.2 发信安全拦截（SendGuard，按来源 IP）
+
+`/auth/mail/code` 在「人机校验通过之后、实际发码之前」按来源 IP 做滑动窗口计数：
+
+| 窗口 | 默认上限 | 超出行为 |
+| ---- | ---- | ---- |
+| 每分钟 | 5（`PANEL_SEND_GUARD_IP_PM`） | 直接拒绝（不封锁，窗口自然回落），返回 `1039` |
+| 每小时 | 30（`PANEL_SEND_GUARD_IP_PH`） | 触发**临时封锁**，默认 30 分钟（`PANEL_SEND_GUARD_BLOCK_MIN`），期间该 IP 全部发码请求拒绝（`1039`） |
+
+调整后需 `systemctl edit serverpanel` 写 override 并 `daemon-reload && restart`，或直接改
+`application.yml` 的 `serverpanel.captcha.*` 与 `serverpanel.send-guard.*`。
+
+### 7.3 注册用户名实时查重
+
+注册页用户名输入框失焦时调 `GET /auth/register/check-username?username=xxx`，
+返回 `{available}` 即时提示「该用户名已被使用」；格式非法直接视为不可用（不查库，
+也不作为枚举入口）。最终唯一性仍由 `uk_username` 在注册接口兜底（`1035`）。
