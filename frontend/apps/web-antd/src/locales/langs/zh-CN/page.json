@@ -11,24 +11,5 @@
     "title": "概览",
     "analytics": "分析页",
     "workspace": "工作台"
-  },
-  "authentication": {
-    "mobileLogin": "邮箱验证码登录",
-    "codeSubtitle": "请输入账号已绑定的邮箱，查收验证码后登录",
-    "mailCodeSent": "验证码已发送，请查收邮箱（{0} 分钟内有效）",
-    "registerSubtitle": "注册后账号不分配任何角色，业务权限需管理员分配",
-    "registerSuccessDesc": "注册成功，账号已创建；业务权限需管理员在系统管理-用户中分配角色后生效",
-    "registerEmailDomainTip": "仅允许以下邮箱域名注册：{0}",
-    "registerEmailDomainError": "该邮箱域名不在允许注册范围内，仅允许：{0}",
-    "accountPendingTitle": "账号待激活",
-    "accountPendingDesc": "您的账号已注册成功，但尚未被分配系统角色，暂无法进入工作台。请联系系统管理员为您分配角色，分配完成后退出重新登录即可正常使用。",
-    "accountPendingLogout": "退出登录",
-    "usernameRuleTip": "3-30 位字母、数字或下划线",
-    "passwordRuleTip": "密码长度须为 8-64 位",
-    "captchaTitle": "请完成人机验证",
-    "captchaDesc": "拖动滑块完成验证，验证通过后才能发送验证码",
-    "captchaVerifying": "验证中…",
-    "captchaVerifyFailed": "人机验证失败，请重试",
-    "usernameTaken": "该用户名已被使用"
   }
 }
