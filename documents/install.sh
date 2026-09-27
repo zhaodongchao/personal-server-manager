@@ -53,7 +53,12 @@ Environment="MAIL_USERNAME=${MAIL_USERNAME:-}"
 Environment="MAIL_PASSWORD=${MAIL_PASSWORD:-}"
 Environment="MAIL_SSL=${MAIL_SSL:-true}"
 Environment="PANEL_MAIL_FROM=${PANEL_MAIL_FROM:-}"
+Environment="PANEL_MAIL_PURPOSES=${PANEL_MAIL_PURPOSES:-all}"
 Environment="PANEL_REGISTER_ENABLED=${PANEL_REGISTER_ENABLED:-false}"
+# 允许注册的邮箱域名白名单（逗号分隔，留空=不限制）；命中限制时注册/发码返回 1036
+Environment="PANEL_REGISTER_EMAIL_DOMAINS=${PANEL_REGISTER_EMAIL_DOMAINS:-}"
+# 多 SMTP 发件账号：在首账号（MAIL_*）之外，追加账号用索引变量
+# SERVERPANEL_MAIL_ACCOUNTS_1_HOST / _PORT / _USERNAME / _PASSWORD / _FROM / _SSL / _PURPOSES
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=1048576
