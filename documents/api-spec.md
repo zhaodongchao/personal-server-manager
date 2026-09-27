@@ -80,6 +80,12 @@ POST /api/v1/auth/login        # 无需登录
 | ---- | ---- | ---- |
 | `username` | string | 必填 |
 | `password` | string | 必填 |
+| `captcha` | string | 必填（实际效果），人机校验登录令牌，缺失 `1037`、失效/已用 `1038` |
+
+> **密码登录同样需先过人机校验**：`captcha` 为滑块校验（purpose=login）签发的一次性登录令牌，
+> 后端在任何账号/密码逻辑之前原子消费它，缺失或失效直接 `1037`/`1038`，不会被当作
+> 「用户名或密码错误」返回（避免被用作账号枚举旁路）。令牌单次使用，登录失败后需重新校验。
+> 流程与发信令牌一致，详见「邮箱验证码登录与注册」章节的人机校验小节。
 
 响应 `data`：
 
@@ -291,6 +297,11 @@ POST /api/v1/auth/safe
    通过则签发一次性发信令牌 `sendToken`（TTL 60s，原子消费）；
 4. 调用 `/auth/mail/code` 时 `captcha = sendToken`。
 
+**密码登录也走同一套人机校验**：滑块校验时 `purpose=login` → 返回 `loginToken`，
+随 `POST /auth/login` 的 `captcha` 字段上报，后端原子消费（缺失 `1037`、失效/已用 `1038`）。
+登录令牌与发信令牌使用不同 Redis 前缀（`captcha:login:` / `captcha:send:`），
+两场景令牌不可互用，令牌 TTL 同为 `captcha.send-token-ttl-seconds`。
+
 滑块是交互式人机校验（抬高自动化门槛），真正的抗爆破 / 防轰炸由下方 **发信安全拦截** 承担。
 
 **发信安全拦截（SendGuard，防邮件轰炸 / 账号枚举）**：`/auth/mail/code` 在「人机校验通过之后、
@@ -316,7 +327,7 @@ POST /api/v1/auth/safe
 | ---- | ---- | ---- | ---- |
 | GET | `/auth/mail/enabled` | 免登录 | 返回 `{enabled, registerEnabled, allowedEmailDomains}`：SMTP 是否就绪 / 自助注册是否开放 / 允许注册的邮箱域名（空数组=不限制）。注册类接口各自再校验一次开关，`registerEnabled=false` 时返回 `1034` |
 | POST | `/auth/captcha/slider` | 免登录 | 领取滑块挑战令牌 `captchaToken`（Redis 登记，TTL `slider-ttl-seconds`） |
-| POST | `/auth/captcha/slider/verify` | 免登录 | body `{captchaToken, dragSeconds}` → `{sendToken}`；校验挑战未过期 / 未用过且拖拽时长达标，签发一次性发信令牌（`1038` 校验失败） |
+| POST | `/auth/captcha/slider/verify` | 免登录 | body `{captchaToken, dragSeconds, purpose}`（`purpose` ∈ `send`（默认）\|`login`）→ 按用途返回 `{sendToken}` 或 `{loginToken}`；校验挑战未过期 / 未用过且拖拽时长达标（`1038` 校验失败）。两种令牌前缀隔离，不可跨场景重放 |
 | GET | `/auth/register/check-username` | 免登录 | query `username` → `{available}`；格式非法直接 `false`（不查库） |
 | POST | `/auth/mail/code` | 免登录 | body `{email, purpose, captcha}`（`purpose` ∈ `login\|register`）。**`captcha` 为必填的发信令牌**：缺失 `1037`、失效/已用 `1038`；同时受 SendGuard 按 IP 限流/封锁约束（`1039`）。login 要求邮箱已绑定账号（`1005`）；register 要求注册开关开启且邮箱未被占用（`1034`/`1035`），命中域名白名单时返回 `1036` |
 | POST | `/auth/mail/login` | 免登录 | body `{email, code}` → `{accessToken}`；用户停用 `1003`、验证码错 `1033` |
@@ -330,7 +341,7 @@ POST /api/v1/auth/safe
 | 配置项 | 环境变量 | 默认 | 说明 |
 | ---- | ---- | ---- | ---- |
 | `captcha.slider-ttl-seconds` | `PANEL_CAPTCHA_SLIDER_TTL` | `120` | 滑块挑战令牌有效期（秒） |
-| `captcha.send-token-ttl-seconds` | `PANEL_CAPTCHA_SEND_TOKEN_TTL` | `60` | 一次性发信令牌有效期（秒） |
+| `captcha.send-token-ttl-seconds` | `PANEL_CAPTCHA_SEND_TOKEN_TTL` | `60` | 一次性令牌有效期（秒），发信令牌与登录令牌共用此 TTL |
 | `captcha.min-drag-seconds` | `PANEL_CAPTCHA_MIN_DRAG` | `0.3` | 拖拽时长下限（秒），低于视为「瞬间置位」非人类操作 |
 | `send-guard.ip-limit-per-minute` | `PANEL_SEND_GUARD_IP_PM` | `5` | 单 IP 每分钟发码上限（超出不封锁，仅平滑限流） |
 | `send-guard.ip-limit-per-hour` | `PANEL_SEND_GUARD_IP_PH` | `30` | 单 IP 每小时发码上限（超出触发临时封锁） |
