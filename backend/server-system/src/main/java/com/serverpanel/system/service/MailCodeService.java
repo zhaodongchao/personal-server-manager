@@ -63,7 +63,7 @@ public class MailCodeService {
         }
 
         String code = generateCode();
-        mailSenderService.send(email, subjectOf(purpose), textOf(code, purpose));
+        mailSenderService.send(email, subjectOf(purpose), textOf(code, purpose), purpose);
 
         // 发送成功才落状态：旧码覆盖（新码生效旧码作废）、冷却 60s、日计数 +1（首条起 24h 窗口）
         redisTemplate.opsForValue().set(codeKey, code,

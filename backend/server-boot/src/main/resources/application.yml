@@ -55,24 +55,8 @@ spring:
     multipart:
       max-file-size: 512MB
       max-request-size: 512MB
-  # 邮件（邮箱验证码登录 / 注册验证）：host 为空则 JavaMailSender 不装配，
-  # 邮箱验证码功能自动降级（/auth/mail/enabled 返回 false，前端隐藏入口）
-  mail:
-    host: ${MAIL_HOST:smtp.qq.com}
-    port: ${MAIL_PORT:465}
-    username: ${MAIL_USERNAME:997546127@qq.com}
-    password: ${MAIL_PASSWORD:mwpwxxqqcmhvbcga}
-    protocol: smtp
-    default-encoding: UTF-8
-    properties:
-      mail:
-        smtp:
-          auth: true
-          ssl:
-            enable: ${MAIL_SSL:true}
-          connectiontimeout: 5000
-          timeout: 10000
-          writetimeout: 10000
+  # 邮件发件（邮箱验证码登录 / 注册验证）配置见下方 serverpanel.mail.accounts：
+  # 支持多账号，按 purpose 路由，全部不可用则整体降级（/auth/mail/enabled 返回 false）。
 
 mybatis-plus:
   mapper-locations: classpath*:mapper/**/*.xml
@@ -113,15 +97,28 @@ serverpanel:
   login:
     max-fail: 5
     lock-minutes: 15
-  # 邮箱验证码：发件人地址（须与 SMTP 账号匹配，多数服务商要求一致否则拒发）；
-  # 验证码有效期与安全阈值（冷却 60s / 日上限 10 / 失败 5 次作废在服务内固定）
+  # 邮箱验证码：发件账号支持多个，按 purpose（register/login/all）路由；
+  # accounts 为空则整体降级（enabled=false，前端隐藏入口）。
+  # 首个账号沿用 MAIL_* / PANEL_MAIL_FROM 环境变量保持向后兼容；
+  # 追加账号用索引环境变量：SERVERPANEL_MAIL_ACCOUNTS_1_HOST / _PORT / _USERNAME /
+  # _PASSWORD / _FROM / _SSL / _PURPOSES（逗号分隔，默认 all）。
   mail:
-    from: ${PANEL_MAIL_FROM:997546127@qq.com}
+    accounts:
+      - host: ${MAIL_HOST:smtp.qq.com}
+        port: ${MAIL_PORT:465}
+        username: ${MAIL_USERNAME:997546127@qq.com}
+        password: ${MAIL_PASSWORD:mwpwxxqqcmhvbcga}
+        from: ${PANEL_MAIL_FROM:997546127@qq.com}
+        ssl: ${MAIL_SSL:true}
+        purposes: ${PANEL_MAIL_PURPOSES:all}
     code-ttl-seconds: 300
   # 自助注册：默认关闭 —— 开启后新用户经邮箱验证码自助注册，
   # 账号不分配任何角色（仅个人中心），业务权限由管理员分配
   register:
     enabled: ${PANEL_REGISTER_ENABLED:true}
+    # 允许注册的邮箱域名白名单（逗号分隔，留空 = 不限制）。
+    # 例：PANEL_REGISTER_EMAIL_DOMAINS=yourcompany.com,sub.yourcompany.com
+    allowed-email-domains: ${PANEL_REGISTER_EMAIL_DOMAINS:}
   # 第三方登录（OAuth）：按配置启用 —— 哪个平台配了 client-id，前端就显示哪个图标；
   # 未配置的平台自动隐藏。微信（WECHAT_OPEN）/QQ 需企业资质，凭证就绪后填环境变量即可零代码生效。
   # redirect-uri 为前端回调页地址（全平台登记同一个）：生产 hash 模式须带 /#/。
