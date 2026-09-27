@@ -5,6 +5,8 @@ export namespace AuthApi {
   export interface LoginParams {
     password?: string;
     username?: string;
+    /** 人机校验登录令牌（滑块校验通过后下发，一次性），缺失后端返回 1037 */
+    captcha?: string;
   }
 
   /** 登录接口返回值 */
@@ -44,6 +46,14 @@ export namespace AuthApi {
   /** 发信令牌（人机校验通过后下发，/mail/code 携带） */
   export interface SendTokenResult {
     sendToken: string;
+  }
+
+  /** 滑块校验响应（按 purpose 返回对应令牌，二选一） */
+  export interface CaptchaVerifyResult {
+    /** purpose=send：发邮件验证码令牌 */
+    sendToken?: string;
+    /** purpose=login：密码登录令牌 */
+    loginToken?: string;
   }
 
   /** 用户名可用性查询结果 */
@@ -120,14 +130,16 @@ export async function getCaptchaTokenApi() {
   return requestClient.post<AuthApi.CaptchaTokenResult>('/auth/captcha/slider');
 }
 
-/** 校验滑块并换取一次性发信令牌（dragSeconds 为拖拽时长，秒） */
+/** 校验滑块并换取一次性令牌（dragSeconds 为拖拽时长秒；purpose 决定返回 sendToken / loginToken） */
 export async function verifyCaptchaApi(
   captchaToken: string,
   dragSeconds: number,
+  purpose: 'send' | 'login' = 'send',
 ) {
-  return requestClient.post<AuthApi.SendTokenResult>('/auth/captcha/slider/verify', {
+  return requestClient.post<AuthApi.CaptchaVerifyResult>('/auth/captcha/slider/verify', {
     captchaToken,
     dragSeconds,
+    purpose,
   });
 }
 

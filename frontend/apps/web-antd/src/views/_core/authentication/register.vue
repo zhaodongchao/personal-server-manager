@@ -13,7 +13,7 @@ import { checkUsernameApi, registerApi } from '#/api';
 import { useMailAuth } from '#/composables/use-mail-auth';
 import { useMailCaptcha } from '#/composables/use-mail-captcha';
 
-import MailCaptchaModal from './components/mail-captcha-modal.vue';
+import CaptchaModal from './components/captcha-modal.vue';
 
 /**
  * 自助注册（邮箱验证码方式）。
@@ -229,7 +229,7 @@ async function handleSubmit(value: Recordable<any>) {
       {{ emailDomainTip }}
     </p>
 
-    <MailCaptchaModal
+    <CaptchaModal
       :error="captchaError"
       :nonce="captchaNonce"
       :open="captchaOpen"

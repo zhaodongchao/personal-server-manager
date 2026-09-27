@@ -59,13 +59,16 @@ public class CaptchaService {
     }
 
     /**
-     * 校验滑块挑战并签发一次性发信令牌。
+     * 校验滑块挑战并签发一次性令牌。
      *
      * @param token       前端此前领取的挑战令牌
      * @param dragSeconds 滑块拖拽时长（秒），由前端组件计算回传
-     * @return 一次性发信令牌（TTL = send-token-ttl-seconds）
+     * @param purpose     用途：{@code send}=发邮件验证码（签 captcha:send:），
+     *                    {@code login}=密码登录（签 captcha:login:）。两者隔离，
+     *                    防止某一场景签发的令牌被重放到另一场景。
+     * @return 一次性令牌（TTL = send-token-ttl-seconds）
      */
-    public String verifySlider(String token, double dragSeconds) {
+    public String verifySlider(String token, double dragSeconds, String purpose) {
         String key = CacheConstants.CAPTCHA_SLIDER_PREFIX + token;
         if (!Boolean.TRUE.equals(redisTemplate.hasKey(key))) {
             throw new ServiceException(ErrorCode.CAPTCHA_INVALID);
@@ -76,11 +79,14 @@ public class CaptchaService {
             log.debug("Captcha verify rejected: dragSeconds={}", dragSeconds);
             throw new ServiceException(ErrorCode.CAPTCHA_INVALID);
         }
-        String sendToken = UUID.randomUUID().toString().replace("-", "");
+        String issuedToken = UUID.randomUUID().toString().replace("-", "");
+        String prefix = "login".equals(purpose)
+                ? CacheConstants.CAPTCHA_LOGIN_PREFIX
+                : CacheConstants.CAPTCHA_SEND_PREFIX;
         redisTemplate.opsForValue().set(
-                CacheConstants.CAPTCHA_SEND_PREFIX + sendToken, "1",
+                prefix + issuedToken, "1",
                 Duration.ofSeconds(sendTokenTtlSeconds));
-        return sendToken;
+        return issuedToken;
     }
 
     /**
@@ -92,6 +98,22 @@ public class CaptchaService {
             throw new ServiceException(ErrorCode.CAPTCHA_REQUIRED);
         }
         String key = CacheConstants.CAPTCHA_SEND_PREFIX + sendToken;
+        String value = redisTemplate.opsForValue().getAndDelete(key);
+        if (value == null) {
+            throw new ServiceException(ErrorCode.CAPTCHA_INVALID);
+        }
+    }
+
+    /**
+     * 消费一次性登录令牌（密码登录场景）。缺失或已失效（过期 / 已用过）均抛错。
+     * 使用 GETDEL 保证原子消费，杜绝并发重放；与 {@link #consumeSendToken}
+     * 各自消费不同前缀的令牌，跨场景不可混用。
+     */
+    public void consumeLoginToken(String loginToken) {
+        if (loginToken == null || loginToken.isBlank()) {
+            throw new ServiceException(ErrorCode.CAPTCHA_REQUIRED);
+        }
+        String key = CacheConstants.CAPTCHA_LOGIN_PREFIX + loginToken;
         String value = redisTemplate.opsForValue().getAndDelete(key);
         if (value == null) {
             throw new ServiceException(ErrorCode.CAPTCHA_INVALID);

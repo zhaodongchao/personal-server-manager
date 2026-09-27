@@ -61,6 +61,14 @@ public final class CacheConstants {
      */
     public static final String CAPTCHA_SEND_PREFIX = "captcha:send:";
 
+    /**
+     * 登录令牌：captcha:login:{loginToken} → "1"，TTL 同 send-token-ttl-seconds。
+     * 由 {@code /auth/captcha/slider/verify}（purpose=login）签发，密码登录
+     * {@code /auth/login} 携带它原子消费；与发信令牌（captcha:send:）隔离，
+     * 杜绝「邮箱验证码场景拿到的令牌」被重放到「密码登录」场景。
+     */
+    public static final String CAPTCHA_LOGIN_PREFIX = "captcha:login:";
+
     /** 发信安全拦截：send:ip:min:{ip} → 计数，TTL 60 秒（每分钟窗口） */
     public static final String SEND_GUARD_IP_MIN = "send:ip:min:";
 

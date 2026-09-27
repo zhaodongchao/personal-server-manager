@@ -69,6 +69,10 @@ public class AuthService {
 
     /** 登录：防爆破（按 用户名+IP 计数与锁定） + 审计登录日志 */
     public String login(LoginBody body, HttpServletRequest request) {
+        // 密码登录也需先过人机校验（与发信闸门同体系，令牌单独签发、原子消费）；
+        // 缺失/失效 → 1037/1038，先于任何账号/密码逻辑，避免被当作「用户名或密码错误」枚举。
+        captchaService.consumeLoginToken(body.getCaptcha());
+
         String username = body.getUsername();
         String ip = clientIp(request);
         String failKey = CacheConstants.LOGIN_FAIL_PREFIX + username + ":" + ip;

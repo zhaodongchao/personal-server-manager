@@ -1,23 +1,45 @@
 <script lang="ts" setup>
+import type { Recordable } from '@vben/types';
 import type { VbenFormSchema } from '@vben/common-ui';
 
-import { computed, markRaw, onMounted } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 
-import { AuthenticationLogin, SliderCaptcha, z } from '@vben/common-ui';
+import { AuthenticationLogin, z } from '@vben/common-ui';
 import { $t } from '@vben/locales';
 import { message } from 'ant-design-vue';
 
 import { useMailAuth } from '#/composables/use-mail-auth';
+import { useMailCaptcha } from '#/composables/use-mail-captcha';
 import { useAuthStore } from '#/store';
 
 import ThirdPartyLoginPanel from './components/third-party-login-panel.vue';
+import CaptchaModal from './components/captcha-modal.vue';
 
+/**
+ * 密码登录。
+ *
+ * 与邮箱发码同体系：登录敏感操作前必须先通过滑块人机校验，拿到一次性
+ * 登录令牌（captcha:login:）随登录请求上报，后端原子消费；缺失/失效返回
+ * 1037/1038。令牌单次使用，登录失败（含密码错误）后清空，下次需重新校验。
+ */
 defineOptions({ name: 'Login' });
 
 const authStore = useAuthStore();
 const route = useRoute();
 const { loadMailEnabled, mailEnabled, registerAvailable } = useMailAuth();
+const {
+  open: captchaOpen,
+  verifying: captchaVerifying,
+  error: captchaError,
+  nonce: captchaNonce,
+  openCaptcha,
+  onSuccess: onCaptchaSuccess,
+  close: closeCaptcha,
+} = useMailCaptcha();
+
+/** 已通过校验的登录令牌（单次使用，提交后或失败后即清空） */
+const loginToken = ref('');
 
 onMounted(() => {
   loadMailEnabled();
@@ -50,15 +72,27 @@ const formSchema = computed((): VbenFormSchema[] => {
       label: $t('authentication.password'),
       rules: z.string().min(1, { message: $t('authentication.passwordTip') }),
     },
-    {
-      component: markRaw(SliderCaptcha),
-      fieldName: 'captcha',
-      rules: z.boolean().refine((value) => value, {
-        message: $t('authentication.verifyRequiredTip'),
-      }),
-    },
   ];
 });
+
+/**
+ * 密码登录提交：先过滑块人机校验拿登录令牌，再调登录接口。
+ * 用户取消校验则不提交；登录失败（含密码错误、令牌失效）清空令牌，下次重新校验。
+ */
+async function handleSubmit(values: Recordable<any>) {
+  if (!loginToken.value) {
+    try {
+      loginToken.value = await openCaptcha('login');
+    } catch {
+      return;
+    }
+  }
+  try {
+    await authStore.authLogin({ ...values, captcha: loginToken.value });
+  } catch {
+    loginToken.value = '';
+  }
+}
 </script>
 
 <template>
@@ -73,7 +107,7 @@ const formSchema = computed((): VbenFormSchema[] => {
     :show-code-login="mailEnabled"
     :show-qrcode-login="false"
     :show-register="registerAvailable"
-    @submit="authStore.authLogin"
+    @submit="handleSubmit"
   >
     <!--
       覆盖框架默认的第三方登录区块：原组件是 4 个没有点击事件的占位图标，
@@ -83,6 +117,17 @@ const formSchema = computed((): VbenFormSchema[] => {
       <ThirdPartyLoginPanel />
     </template>
   </AuthenticationLogin>
+
+  <!-- 登录前滑块人机校验弹窗 -->
+  <CaptchaModal
+    :error="captchaError"
+    :nonce="captchaNonce"
+    :open="captchaOpen"
+    :verifying="captchaVerifying"
+    purpose="login"
+    @close="closeCaptcha"
+    @success="onCaptchaSuccess"
+  />
 </template>
 
 <style scoped>

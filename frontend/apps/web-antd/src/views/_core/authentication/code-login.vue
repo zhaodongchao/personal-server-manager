@@ -12,7 +12,7 @@ import { useMailAuth } from '#/composables/use-mail-auth';
 import { useMailCaptcha } from '#/composables/use-mail-captcha';
 import { useAuthStore } from '#/store';
 
-import MailCaptchaModal from './components/mail-captcha-modal.vue';
+import CaptchaModal from './components/captcha-modal.vue';
 
 /**
  * 邮箱验证码登录。
@@ -125,7 +125,7 @@ async function handleSubmit(values: Recordable<any>) {
     @submit="handleSubmit"
   />
 
-  <MailCaptchaModal
+  <CaptchaModal
     :error="captchaError"
     :nonce="captchaNonce"
     :open="captchaOpen"
