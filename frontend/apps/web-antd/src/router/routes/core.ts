@@ -46,6 +46,21 @@ const coreRoutes: RouteRecordRaw[] = [
         name: 'Profile',
         path: '/profile',
       },
+      {
+        // 自助注册成功但管理员尚未分配角色的用户：登录后无任何业务菜单，
+        // 直接落默认首页会触发 404，路由守卫将其重定向至此提示页。
+        // 作为核心路由绕过权限拦截，未分配角色也能稳定打开。
+        component: () =>
+          import('#/views/_core/fallback/pending-activation.vue'),
+        meta: {
+          hideInBreadcrumb: true,
+          hideInMenu: true,
+          hideInTab: true,
+          title: $t('authentication.accountPendingTitle'),
+        },
+        name: 'PendingActivation',
+        path: 'pending-activation',
+      },
     ],
   },
   {

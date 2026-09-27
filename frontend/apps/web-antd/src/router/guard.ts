@@ -116,6 +116,13 @@ function setupAccessGuard(router: Router) {
     initPreferenceSync();
     const userRoles = userInfo.roles ?? [];
 
+    // 自助注册的新账号不分配任何角色：业务菜单为空，若继续生成路由并落默认首页
+    // 会触发 404。直接引导至「待激活」提示页，管理员分配角色后退出重登即可进入系统。
+    if (userRoles.length === 0) {
+      accessStore.setIsAccessChecked(true);
+      return { path: '/pending-activation', replace: true };
+    }
+
     // 生成菜单和路由
     const { accessibleMenus, accessibleRoutes } = await generateAccess({
       roles: userRoles,
