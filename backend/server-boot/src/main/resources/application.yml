@@ -58,10 +58,10 @@ spring:
   # 邮件（邮箱验证码登录 / 注册验证）：host 为空则 JavaMailSender 不装配，
   # 邮箱验证码功能自动降级（/auth/mail/enabled 返回 false，前端隐藏入口）
   mail:
-    host: ${MAIL_HOST:}
+    host: ${MAIL_HOST:smtp.qq.com}
     port: ${MAIL_PORT:465}
-    username: ${MAIL_USERNAME:}
-    password: ${MAIL_PASSWORD:}
+    username: ${MAIL_USERNAME:997546127@qq.com}
+    password: ${MAIL_PASSWORD:mwpwxxqqcmhvbcga}
     protocol: smtp
     default-encoding: UTF-8
     properties:
@@ -116,7 +116,7 @@ serverpanel:
   # 邮箱验证码：发件人地址（须与 SMTP 账号匹配，多数服务商要求一致否则拒发）；
   # 验证码有效期与安全阈值（冷却 60s / 日上限 10 / 失败 5 次作废在服务内固定）
   mail:
-    from: ${PANEL_MAIL_FROM:}
+    from: ${PANEL_MAIL_FROM:997546127@qq.com}
     code-ttl-seconds: 300
   # 自助注册：默认关闭 —— 开启后新用户经邮箱验证码自助注册，
   # 账号不分配任何角色（仅个人中心），业务权限由管理员分配
