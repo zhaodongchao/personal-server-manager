@@ -95,15 +95,21 @@ public class DatabaseService {
         for (AppDatabase d : databaseMapper.selectList(null)) {
             managedByName.put(d.getDbName(), d);
         }
-        // MySQL 真实库（dbName -> 默认字符集）
+        // MySQL 真实库（dbName -> 默认字符集）。
+        // 管理连接不可用时（容器内无 mysql 客户端 / 账号未配 / 目标库不可达）
+        // 降级为「仅展示已纳管登记」，避免整页 6006 失败；纳管能力随之不可用。
         Map<String, String> real = new TreeMap<>();
-        for (String[] row : queryRows(
-                "SELECT SCHEMA_NAME, DEFAULT_CHARACTER_SET_NAME FROM information_schema.SCHEMATA")) {
-            String name = row[0] == null ? "" : row[0].trim();
-            if (name.isEmpty() || SYSTEM_SCHEMAS.contains(name.toLowerCase())) {
-                continue;
+        try {
+            for (String[] row : queryRows(
+                    "SELECT SCHEMA_NAME, DEFAULT_CHARACTER_SET_NAME FROM information_schema.SCHEMATA")) {
+                String name = row[0] == null ? "" : row[0].trim();
+                if (name.isEmpty() || SYSTEM_SCHEMAS.contains(name.toLowerCase())) {
+                    continue;
+                }
+                real.put(name, row.length > 1 && row[1] != null ? row[1] : "");
             }
-            real.put(name, row.length > 1 && row[1] != null ? row[1] : "");
+        } catch (ServiceException e) {
+            log.warn("MySQL 管理连接不可用，概览已降级为仅展示已纳管库: {}", e.getMessage());
         }
 
         Set<String> all = new TreeSet<>(managedByName.keySet());
