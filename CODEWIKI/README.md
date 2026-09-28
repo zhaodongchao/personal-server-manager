@@ -22,6 +22,47 @@
 
 ## 快速概览
 
+```mermaid
+flowchart TD
+    User[("浏览器 / 管理员")]
+    FE["前端 Vben Admin 5<br/>apps/web-antd 静态 SPA"]
+    BE["后端 Spring Boot<br/>server-boot :8080"]
+    S["server-system 系统管理"]
+    M["server-monitor 实时监控"]
+    F["server-file 文件管理"]
+    O["server-ops 运维管理"]
+    A["server-appstack 应用栈"]
+    T["server-tools 工具箱"]
+    FW["server-framework 框架"]
+    CM["server-common 公共"]
+    DB[("MySQL / Redis / MongoDB")]
+    DOCK["Docker 容器/镜像"]
+    HA["psm-hostagent 宿主 Python 代理"]
+    HOSTCMD["宿主机系统命令<br/>systemctl / ufw / nginx / sysctl"]
+
+    User --> FE
+    FE -- "/api REST (Bearer)<br/>/ws WebSocket" --> BE
+    BE --> S
+    BE --> M
+    BE --> F
+    BE --> O
+    BE --> A
+    BE --> T
+    S --- FW
+    M --- FW
+    F --- FW
+    O --- FW
+    A --- FW
+    T --- FW
+    FW --- CM
+    S --> DB
+    M --> DB
+    F --> DB
+    A --> DOCK
+    O -- "AF_UNIX socket" --> HA
+    HA --> HOSTCMD
+```
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    浏览器 / 管理员用户                         │

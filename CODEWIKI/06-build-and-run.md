@@ -43,6 +43,20 @@ pnpm dev          # 或 cd apps/web-antd && pnpm dev
   - 格式化：`pnpm format`
   - 单元测试：`pnpm test:unit`
 
+### 1.4 开发环境拓扑
+
+```mermaid
+flowchart LR
+    INFRA["基础设施<br/>docker compose（MySQL 8.4 + Redis 7）"]
+    BE["后端<br/>server-boot :8080（dev profile）"]
+    FE["前端<br/>pnpm dev（Vite 代理）"]
+    BROWSER["浏览器 :8080"]
+
+    INFRA --> BE
+    FE -- "/api、/ws" --> BE
+    BROWSER --> FE
+```
+
 ## 2. 访问与默认账号
 
 浏览器访问 `http://localhost:8080/`，使用 `admin / Admin@123` 登录，请登录后立即修改。
@@ -57,6 +71,20 @@ pnpm dev          # 或 cd apps/web-antd && pnpm dev
 ```
 
 `build.sh` 流程：先构建前端静态产物 → 合成进后端 `src/main/resources/static` → 打包后端 fat jar。
+
+```mermaid
+flowchart TD
+    FEB["前端构建<br/>pnpm build → dist 静态产物"]
+    MERGE["合成进后端 static<br/>src/main/resources/static"]
+    JAR["打包 fat jar<br/>backend/server-boot/target/serverpanel.jar"]
+    SERV["安装 systemd 服务<br/>/etc/systemd/system/serverpanel.service"]
+    DEP["运行依赖<br/>MySQL / Redis / MongoDB（可选）"]
+    HA["宿主通道<br/>psm-hostagent（可选，运维能力必需）"]
+
+    FEB --> MERGE --> JAR --> SERV
+    SERV --> DEP
+    SERV --> HA
+```
 
 ## 4. 安装为系统服务
 

@@ -8,19 +8,42 @@ ServerPanel 面板本身跑在 Docker 容器里（`eclipse-temurin:21-jre`），
 
 ## 2. 整体拓扑
 
+```mermaid
+flowchart TD
+    BE["后端 server-boot（容器内）<br/>HostChannelService.call(op, args, label, timeoutSec)"]
+    EXEC["HostAgentExecutor（server-framework，容器内）<br/>读共享密钥 + 写单行 JSON 请求 + 读响应"]
+    SOCK["/run/psm-hostagent/agent.sock<br/>AF_UNIX（不暴露 TCP）"]
+    AGENT["hostagent.py（宿主机 root，systemd）<br/>密钥鉴权 → op 白名单 → 逐 op 参数校验 → subprocess"]
+    CMD["宿主机系统命令<br/>systemctl / ufw / nginx -t / certbot / sysctl …"]
+
+    BE --> EXEC
+    EXEC --> SOCK
+    SOCK --> AGENT
+    AGENT --> CMD
 ```
-后端 (server-boot, 容器内)
-  │  HostChannelService.call(op, args, label, timeoutSec)
-  ▼
-HostAgentExecutor (server-framework, 容器内)
-  │  读共享密钥 + 写单行 JSON 请求 + 读响应（AF_UNIX SocketChannel）
-  ▼
-/run/psm-hostagent/agent.sock  (AF_UNIX，不暴露 TCP)
-  ▼
-hostagent.py (psm-hostagent, 宿主机 root, systemd)
-  │  密钥鉴权 → op 白名单 → 逐 op 参数校验 → subprocess argv 数组执行
-  ▼
-宿主机系统命令（systemctl / ufw / nginx -t / certbot / sysctl ...）
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Ops as 运维模块(server-ops)
+    participant Fac as HostChannelService
+    participant Exec as HostAgentExecutor
+    participant Sock as AF_UNIX socket
+    participant Agent as hostagent.py
+    participant Cmd as 宿主机命令
+
+    Ops->>Fac: call("service.*" / "nginx.*", args, label, timeout)
+    Fac->>Fac: require() 校验通道可用（不可用抛 5009）
+    Fac->>Exec: 调用宿主 op
+    Exec->>Sock: 写单行 JSON 请求
+    Sock->>Agent: 转发请求
+    Agent->>Agent: 密钥 / 白名单 / 参数校验
+    Agent->>Cmd: subprocess(argv 数组，无 shell 拼接)
+    Cmd-->>Agent: 执行结果（stdout/stderr + duration）
+    Agent-->>Sock: 统一 JSON 响应
+    Sock-->>Exec: 读响应（超时 / 中断 / IO 错误处理）
+    Exec-->>Fac: HostResult
+    Fac-->>Ops: R<...>（通道级失败 5009 / 命令级失败 500）
 ```
 
 - **安全边界**：共享密钥认证、46 个操作白名单、逐操作参数校验、子进程一律 argv 数组（无 shell 拼接）。

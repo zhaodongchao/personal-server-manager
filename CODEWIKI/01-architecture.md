@@ -24,6 +24,32 @@ ServerPanel 是一套**单机服务器管理系统**（DevOps 面板），为单
 | 存储 | MySQL + Redis + MongoDB | MySQL(RBAC/业务表,Flyway 迁移)、Redis(缓存/Sa-Token)、MongoDB(监控历史/服务器配置/变更审计) |
 | 宿主通道 | psm-hostagent(Python systemd) | 容器内执行不了的服务/防火墙/Nginx 等系统命令，转由宿主机执行 |
 
+```mermaid
+flowchart TB
+    subgraph FE["前端层"]
+        Front["Vben Admin 5 / Vue 3 / AntDV<br/>静态 SPA（Vite 代理 /api、/ws）"]
+    end
+    subgraph BE["后端层 · Spring Boot 多模块 (server-boot)"]
+        biz["server-system / monitor / file /<br/>ops / appstack / tools"]
+        framework["server-framework"]
+        common["server-common"]
+    end
+    subgraph STORE["存储层"]
+        MySQL[("MySQL")]
+        Redis[("Redis")]
+        Mongo[("MongoDB")]
+    end
+    Host["宿主机 psm-hostagent (Python systemd)"]
+
+    Front -- "REST /api/v1 + Bearer | WS /ws" --> BE
+    biz --> framework --> common
+    biz --> MySQL
+    biz --> Redis
+    biz --> Mongo
+    biz -- "AF_UNIX socket" --> Host
+    Host --> HostCMD["systemctl / ufw / nginx / sysctl"]
+```
+
 ### 后端分层红线
 
 严格遵循单向依赖：`Controller → Service → Mapper/外部能力 → Database`。

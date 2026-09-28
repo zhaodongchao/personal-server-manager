@@ -4,23 +4,33 @@
 
 模块依赖单向（箭头 = "依赖"），禁止反向/成环：
 
-```
-server-boot （启动层，聚合一切）
-   │ 依赖
-   ├── server-system
-   ├── server-monitor
-   ├── server-file
-   ├── server-ops
-   ├── server-appstack
-   └── server-tools
-        │ 依赖 server-framework
-        │ 依赖 server-system（读 sys_config 开关）
-        └── 依赖 server-appstack（复用 JobHttpClient / SSRF 护栏）
+```mermaid
+flowchart BT
+    common["server-common"]
+    framework["server-framework"]
+    system["server-system"]
+    monitor["server-monitor"]
+    file["server-file"]
+    ops["server-ops"]
+    appstack["server-appstack"]
+    tools["server-tools"]
+    boot["server-boot（启动层，聚合一切）"]
 
-server-system / monitor / file / ops / appstack / tools
-   └── 依赖 server-framework
-        └── 依赖 server-common
-server-framework ──▶ server-common
+    framework --> common
+    system --> framework
+    monitor --> framework
+    file --> framework
+    ops --> framework
+    appstack --> framework
+    tools --> framework
+    tools --> system
+    tools --> appstack
+    boot --> system
+    boot --> monitor
+    boot --> file
+    boot --> ops
+    boot --> appstack
+    boot --> tools
 ```
 
 - 根聚合：[backend/pom.xml](file:///workspace/backend/pom.xml)（version 1.0.0，`dependencyManagement` 收敛第三方版本）。
@@ -71,12 +81,18 @@ server-framework ──▶ server-common
 
 ## 4. 前端 Monorepo 内部依赖
 
-```
-apps/web-antd  ── 依赖 ──▶ @core/*、@vben/effects、@vben/icons、@vben/locales、
-                          @vben/preferences、@vben/constants、@vben/stores、
-                          @vben/styles、@vben/types、@vben/utils
-internal/* (vite-config / lint-configs / tsconfig / tailwind-config / node-utils / vsh)
-scripts/* (turbo-run / vsh)
+```mermaid
+flowchart LR
+    App["apps/web-antd"]
+    core["@core/*"]
+    vben["@vben/effects · icons · locales ·<br/>preferences · constants · stores ·<br/>styles · types · utils"]
+    internal["internal/*<br/>vite-config · lint-configs · tsconfig ·<br/>tailwind-config · node-utils · vsh"]
+    scripts["scripts/*<br/>turbo-run · vsh"]
+
+    App --> core
+    App --> vben
+    App --> internal
+    App --> scripts
 ```
 
 ## 5. 基础设施依赖（docker/ 与 docker-compose.dev.yml）

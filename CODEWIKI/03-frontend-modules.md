@@ -15,6 +15,23 @@ apps/web-antd/src
 └── views/            # 页面（按业务模块划分）
 ```
 
+```mermaid
+flowchart TD
+    Entry["main.ts → bootstrap.ts<br/>初始化 / 创建 app / 挂载"]
+    Router["router/index.ts + guard.ts<br/>路由守卫 · 鉴权 · 动态菜单"]
+    Store["Pinia store/auth.ts<br/>认证状态（authByToken / authLogin / logout）"]
+    Api["api/ 请求层<br/>request.ts 统一封装 · Bearer token · 错误处理"]
+    Views["views/* 页面视图（按业务域）"]
+    Backend[("后端 /api/v1 (localhost:8080)")]
+
+    Entry --> Router
+    Entry --> Store
+    Router --> Views
+    Store --> Router
+    Views --> Api
+    Api -- "Vite 代理 /api" --> Backend
+```
+
 ---
 
 ## 1. 应用入口与引导
@@ -114,6 +131,20 @@ apps/web-antd/src
 ## 8. Monorepo 内部包（frontend/packages 与 internal）
 
 `apps/web-antd` 之上的共享能力，采用 pnpm workspace + catalog 版本收敛：
+
+```mermaid
+flowchart LR
+    App["apps/web-antd 主应用"]
+    core["@core/base、@core/composables、@core/preferences、@core/ui-kit"]
+    vben["@vben/effects、@vben/icons、@vben/locales、@vben/preferences、@vben/constants、@vben/stores、@vben/styles、@vben/types、@vben/utils"]
+    internal["internal/*<br/>vite-config / lint-configs / tsconfig / tailwind-config / node-utils / vsh"]
+    scripts["scripts/*<br/>turbo-run / vsh"]
+
+    App --> core
+    App --> vben
+    App --> internal
+    App --> scripts
+```
 
 | 包 | 作用 |
 | --- | --- |

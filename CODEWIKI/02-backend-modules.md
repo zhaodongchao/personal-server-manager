@@ -16,6 +16,45 @@ server-tools      ④ 业务层 · 工具箱
 server-boot       ⑤ 启动层 · 装配启动与打包
 ```
 
+```mermaid
+flowchart LR
+    subgraph L5["⑤ 启动层"]
+        boot["server-boot<br/>装配 & 打包 fat jar"]
+    end
+    subgraph L4["④ 业务层"]
+        monitor["server-monitor"]
+        file["server-file"]
+        ops["server-ops"]
+        appstack["server-appstack"]
+        tools["server-tools"]
+    end
+    subgraph L3["③ 系统层"]
+        system["server-system"]
+    end
+    subgraph L2["② 基础层 - 框架"]
+        framework["server-framework"]
+    end
+    subgraph L1["① 基础层 - 公共"]
+        common["server-common"]
+    end
+
+    boot --> system
+    boot --> monitor
+    boot --> file
+    boot --> ops
+    boot --> appstack
+    boot --> tools
+    system --> framework
+    monitor --> framework
+    file --> framework
+    ops --> framework
+    appstack --> framework
+    tools --> framework
+    tools --> system
+    tools --> appstack
+    framework --> common
+```
+
 ---
 
 ## ① server-common — 公共模型与工具
