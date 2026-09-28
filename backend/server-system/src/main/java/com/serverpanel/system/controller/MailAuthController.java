@@ -7,6 +7,7 @@ import com.serverpanel.common.core.R;
 import com.serverpanel.system.dto.auth.MailCodeBody;
 import com.serverpanel.system.dto.auth.MailLoginBody;
 import com.serverpanel.system.dto.auth.RegisterBody;
+import com.serverpanel.system.dto.auth.ResetPasswordBody;
 import com.serverpanel.system.service.AuthService;
 import com.serverpanel.system.service.MailCodeService;
 import com.serverpanel.system.service.MailSenderService;
@@ -26,7 +27,7 @@ import lombok.RequiredArgsConstructor;
 /**
  * 邮箱验证码认证接口（邮箱登录 / 自助注册）。
  *
- * <p>四个端点均在拦截器白名单内（免登录）：enabled / code / login / register。
+ * <p>五个端点均在拦截器白名单内（免登录）：enabled / code / login / register / reset-password。
  * 发码场景校验与验证码安全（冷却 / 日限 / 一次性消费）由 MailCodeService 承担；
  * 登录与注册的会话建立、登录日志由 AuthService 承担。
  *
@@ -99,6 +100,20 @@ public class MailAuthController {
     @PostMapping("/register")
     public R<Void> register(@Valid @RequestBody RegisterBody body, HttpServletRequest request) {
         authService.register(body, request);
+        return R.ok();
+    }
+
+    /**
+     * 忘记密码重置（免登录）：邮箱验证码（purpose=reset）证明持有者对邮箱的控制权后，
+     * 为该邮箱绑定的账号设置新密码，并强制该账号全端下线。
+     *
+     * <p>刻意<i>不加</i> @Audit —— 审计切面会把入参 JSON 化落库，重置体含明文新密码。
+     * 重置事件已由 AuthService 写入 sys_login_log（message 标注「密码重置成功」）。
+     */
+    @PostMapping("/reset-password")
+    public R<Void> resetPassword(@Valid @RequestBody ResetPasswordBody body,
+                                 HttpServletRequest request) {
+        authService.resetPassword(body, request);
         return R.ok();
     }
 }

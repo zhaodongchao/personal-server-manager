@@ -62,7 +62,7 @@ function checkEmailDomain(email: string) {
   if (!domains?.length || !email.includes('@')) {
     return;
   }
-  const domain = email.split('@')[1].trim().toLowerCase();
+  const domain = email.split('@')[1]?.trim().toLowerCase() ?? '';
   const matched = domains.some(
     (d) => domain === d.toLowerCase() || domain.endsWith(`.${d.toLowerCase()}`),
   );

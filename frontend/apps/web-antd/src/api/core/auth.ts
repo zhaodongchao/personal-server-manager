@@ -32,8 +32,8 @@ export namespace AuthApi {
   /** 发送邮箱验证码参数 */
   export interface MailCodeParams {
     email: string;
-    /** login=登录（要求邮箱已绑定面板账号）；register=注册（要求邮箱未被占用） */
-    purpose: 'login' | 'register';
+    /** login=登录（要求邮箱已绑定面板账号）；reset=重置密码（要求邮箱已绑定账号）；register=注册（要求邮箱未被占用） */
+    purpose: 'login' | 'reset' | 'register';
     /** 人机校验通过后下发的发信令牌（一次性） */
     captcha: string;
   }
@@ -85,6 +85,13 @@ export namespace AuthApi {
     email: string;
     password: string;
     username: string;
+  }
+
+  /** 忘记密码重置参数（邮箱验证码方式） */
+  export interface ResetPasswordParams {
+    code: string;
+    email: string;
+    password: string;
   }
 }
 
@@ -176,6 +183,16 @@ export async function mailLoginApi(data: AuthApi.MailLoginParams) {
  */
 export async function registerApi(data: AuthApi.RegisterParams) {
   return requestClient.post('/auth/register', data);
+}
+
+/**
+ * 忘记密码重置（邮箱验证码方式）。
+ *
+ * 免登录接口：持一次性重置验证码（purpose=reset），为该邮箱绑定的账号设置新密码，
+ * 后端会强制该账号全端下线。密码策略与注册一致（8-64 位）。
+ */
+export async function resetPasswordApi(data: AuthApi.ResetPasswordParams) {
+  return requestClient.post('/auth/reset-password', data);
 }
 
 /**

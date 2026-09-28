@@ -1,5 +1,5 @@
 {
-  "mobileLogin": "Email Code Login",
+  "mobileLogin": "Code Login",
   "codeSubtitle": "Enter the email bound to your account to receive a login code",
   "mailCodeSent": "Verification code sent, please check your inbox (valid for {0} minutes)",
   "registerSubtitle": "New accounts get no role; permissions are assigned by the administrator",

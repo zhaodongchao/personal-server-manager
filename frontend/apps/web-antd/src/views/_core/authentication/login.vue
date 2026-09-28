@@ -107,7 +107,7 @@ async function handleAccountSubmit() {
   }
   localStorage.setItem(
     REMEMBER_ME_KEY,
-    rememberMe.value ? values.username : '',
+    rememberMe.value ? (values.username ?? '') : '',
   );
   accountLoading.value = true;
   try {
@@ -235,7 +235,7 @@ onMounted(() => {
             :loading="accountLoading"
             aria-label="login"
             class="w-full"
-            size="large"
+            size="lg"
             @click="handleAccountSubmit"
           >
             {{ $t('common.login') }}
@@ -255,7 +255,7 @@ onMounted(() => {
             :loading="codeLoading"
             aria-label="code-login"
             class="mt-4 w-full"
-            size="large"
+            size="lg"
             @click="handleCodeSubmit"
           >
             {{ $t('common.login') }}

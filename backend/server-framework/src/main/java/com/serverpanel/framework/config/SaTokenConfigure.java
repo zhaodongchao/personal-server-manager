@@ -25,12 +25,13 @@ public class SaTokenConfigure implements WebMvcConfigurer {
                 .excludePathPatterns(
                         "/api/v1/auth/login",
                         "/error",
-                        // 邮箱验证码（登录 / 注册）：enabled / code / login / register 免登录放行；
-                        // 场景与限额校验在 Service 内（冷却 / 日限 / 一次性消费）
+                        // 邮箱验证码（登录 / 注册 / 重置密码）：enabled / code / login / register / reset-password
+                        // 免登录放行；场景与限额校验在 Service 内（冷却 / 日限 / 一次性消费）
                         "/api/v1/auth/mail/enabled",
                         "/api/v1/auth/mail/code",
                         "/api/v1/auth/mail/login",
                         "/api/v1/auth/register",
+                        "/api/v1/auth/reset-password",
                         // 点选人机校验：click 下发与 verify 均免登录放行
                         "/api/v1/auth/captcha/**",
                         // 第三方登录：providers/authorize/login 免登录放行
