@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import type { AppstackApi } from '#/api';
 
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 import { useAccess } from '@vben/access';
@@ -23,13 +23,14 @@ import {
 } from 'ant-design-vue';
 
 import {
+  adoptDatabaseApi,
   backupDatabaseApi,
   createDatabaseApi,
   createIdSourceApi,
   deleteDatabaseApi,
   deleteIdSourceApi,
   getDatabaseCharsetsApi,
-  getDatabasePageApi,
+  getDatabaseOverviewApi,
   getIdSourcePageApi,
   getIdSourceStatusApi,
   initIdSourceApi,
@@ -53,24 +54,31 @@ const activeTab = ref('db');
 
 // ==================== MySQL 实例 ====================
 const loading = ref(false);
-const list = ref<AppstackApi.Database[]>([]);
+const list = ref<AppstackApi.DatabaseOverview[]>([]);
 const pagination = reactive({ current: 1, pageSize: 10, total: 0 });
 const keyword = ref('');
 const charsets = ref<string[]>(['utf8mb4', 'utf8', 'latin1', 'gbk']);
 
+// 概览一次返回全部真实库，这里做客户端过滤 + 分页
+const filteredList = computed(() => {
+  const kw = keyword.value.trim().toLowerCase();
+  const base = kw ? list.value.filter((d) => d.dbName.toLowerCase().includes(kw)) : list.value;
+  const start = (pagination.current - 1) * pagination.pageSize;
+  return base.slice(start, start + pagination.pageSize);
+});
+
 async function load() {
   loading.value = true;
   try {
-    const res = await getDatabasePageApi({
-      keyword: keyword.value || undefined,
-      pageNum: pagination.current,
-      pageSize: pagination.pageSize,
-    });
-    list.value = res.records ?? [];
-    pagination.total = res.total ?? 0;
+    list.value = await getDatabaseOverviewApi();
+    pagination.total = list.value.length;
   } finally {
     loading.value = false;
   }
+}
+
+function onSearch() {
+  pagination.current = 1;
 }
 
 async function loadCharsets() {
@@ -113,8 +121,40 @@ async function doCreate() {
   }
 }
 
+// ==================== 纳管已有库 ====================
+// MySQL 中已有、但尚未登记进面板的真实库，经「纳管」登记后纳入统一管理
+const adoptSaving = ref(false);
+const adoptName = ref('');
+const adoptRemark = ref('');
+const adoptOpen = ref(false);
+
+function openAdopt(record: AppstackApi.DatabaseOverview) {
+  adoptName.value = record.dbName;
+  adoptRemark.value = '';
+  adoptOpen.value = true;
+}
+
+async function doAdopt() {
+  if (!adoptName.value.trim()) {
+    message.warning('请填写库名');
+    return;
+  }
+  adoptSaving.value = true;
+  try {
+    await adoptDatabaseApi({
+      dbName: adoptName.value.trim(),
+      remark: adoptRemark.value.trim() || undefined,
+    });
+    adoptOpen.value = false;
+    message.success(`已纳管「${adoptName.value.trim()}」`);
+    await load();
+  } finally {
+    adoptSaving.value = false;
+  }
+}
+
 // ==================== 删库 ====================
-function confirmDelete(record: AppstackApi.Database) {
+function confirmDelete(record: AppstackApi.DatabaseOverview) {
   Modal.confirm({
     content: `确定删除数据库「${record.dbName}」？库、授权账号及其数据将被一并删除，且不可恢复。`,
     onOk: async () => {
@@ -129,7 +169,7 @@ function confirmDelete(record: AppstackApi.Database) {
 // ==================== 备份 / 恢复 ====================
 const backupBusy = ref(false);
 
-async function doBackup(record: AppstackApi.Database) {
+async function doBackup(record: AppstackApi.DatabaseOverview) {
   backupBusy.value = true;
   try {
     const file = await backupDatabaseApi(record.id!);
@@ -147,7 +187,7 @@ const restoreId = ref<null | string>(null);
 const restoreName = ref('');
 const restoreBusy = ref(false);
 
-function openRestore(record: AppstackApi.Database) {
+function openRestore(record: AppstackApi.DatabaseOverview) {
   restoreId.value = record.id ?? null;
   restoreName.value = '';
   restoreOpen.value = true;
@@ -173,13 +213,6 @@ async function doRestore() {
     },
     title: '恢复确认',
   });
-}
-
-function formatTime(s?: string) {
-  if (!s) {
-    return '-';
-  }
-  return new Date(s).toLocaleString('zh-CN', { hour12: false });
 }
 
 // ==================== 取号数据源 ====================
@@ -401,10 +434,10 @@ onMounted(() => {
           allow-clear
           class="w-64"
           placeholder="按库名过滤"
-          @keyup.enter="load"
-          @press-enter="load"
+          @keyup.enter="onSearch"
+          @press-enter="onSearch"
         />
-        <Button type="primary" @click="load">搜索</Button>
+        <Button type="primary" @click="onSearch">搜索</Button>
         <Button
           v-if="hasAccessByCodes(['appstack:database:add'])"
           class="ml-auto"
@@ -417,7 +450,7 @@ onMounted(() => {
 
       <div class="min-h-0 flex-1 overflow-auto rounded border">
         <Table
-          :data-source="list"
+          :data-source="filteredList"
           :loading="loading"
           :pagination="{
             current: pagination.current,
@@ -428,11 +461,10 @@ onMounted(() => {
             onChange: (page: number, size: number) => {
               pagination.current = page;
               pagination.pageSize = size;
-              load();
             },
           }"
-          :row-key="(record: AppstackApi.Database) => record.id ?? record.dbName"
-          :scroll="{ x: 780 }"
+          :row-key="(record: AppstackApi.DatabaseOverview) => record.managed && record.id ? record.id! : record.dbName"
+          :scroll="{ x: 860 }"
           size="small"
         >
           <Table.Column key="dbName" title="库名" width="200">
@@ -440,47 +472,57 @@ onMounted(() => {
               <span class="font-mono font-medium">{{ record.dbName }}</span>
             </template>
           </Table.Column>
+          <Table.Column key="managed" title="状态" width="90">
+            <template #default="{ record }">
+              <Tag :color="record.managed ? 'green' : 'orange'">
+                {{ record.managed ? '已纳管' : '未纳管' }}
+              </Tag>
+            </template>
+          </Table.Column>
           <Table.Column key="dbUser" title="授权账号" width="160">
             <template #default="{ record }">
-              <span class="font-mono text-xs">{{ record.dbUser }}</span>
+              <span class="font-mono text-xs">{{ record.dbUser || '-' }}</span>
             </template>
           </Table.Column>
           <Table.Column key="charset" title="字符集" width="100">
             <template #default="{ record }">
-              <Tag color="blue">{{ record.charset }}</Tag>
+              <Tag :color="record.charset ? 'blue' : 'default'">{{ record.charset || '-' }}</Tag>
             </template>
           </Table.Column>
           <Table.Column data-index="remark" title="备注" />
-          <Table.Column key="createdAt" title="创建时间" width="170">
-            <template #default="{ record }">
-              {{ formatTime(record.createdAt) }}
-            </template>
-          </Table.Column>
           <Table.Column key="action" title="操作" width="200" fixed="right">
             <template #default="{ record }">
               <Space :size="2" wrap>
                 <Button
-                  v-if="hasAccessByCodes(['appstack:database:backup'])"
+                  v-if="record.managed && hasAccessByCodes(['appstack:database:backup'])"
                   size="small"
                   type="link"
-                  @click="doBackup(record as AppstackApi.Database)"
+                  @click="doBackup(record as AppstackApi.DatabaseOverview)"
                 >
                   备份
                 </Button>
                 <Button
-                  v-if="hasAccessByCodes(['appstack:database:backup'])"
+                  v-if="record.managed && hasAccessByCodes(['appstack:database:backup'])"
                   size="small"
                   type="link"
-                  @click="openRestore(record as AppstackApi.Database)"
+                  @click="openRestore(record as AppstackApi.DatabaseOverview)"
                 >
                   恢复
                 </Button>
                 <Button
-                  v-if="hasAccessByCodes(['appstack:database:delete'])"
+                  v-if="!record.managed && hasAccessByCodes(['appstack:database:add'])"
+                  size="small"
+                  type="link"
+                  @click="openAdopt(record as AppstackApi.DatabaseOverview)"
+                >
+                  纳管
+                </Button>
+                <Button
+                  v-if="record.managed && hasAccessByCodes(['appstack:database:delete'])"
                   danger
                   size="small"
                   type="link"
-                  @click="confirmDelete(record as AppstackApi.Database)"
+                  @click="confirmDelete(record as AppstackApi.DatabaseOverview)"
                 >
                   删除
                 </Button>
@@ -707,6 +749,34 @@ onMounted(() => {
         v-model:value="restoreName"
         placeholder="备份文件名，如 myblog_20260918120000.sql"
       />
+    </Modal>
+
+    <!-- 纳管已有库 -->
+    <Modal
+      v-model:open="adoptOpen"
+      :confirm-loading="adoptSaving"
+      title="纳管数据库"
+      @ok="doAdopt"
+    >
+      <p class="mb-3 text-sm text-gray-500">
+        将 MySQL 中已有的「{{ adoptName }}」登记进面板纳入统一管理。业务账号沿用「账号=库名」约定，
+        访问口令仍由库外管控，面板仅托管备份 / 恢复 / 删除等操作。
+      </p>
+      <Form :label-col="{ span: 6 }" :model="{ dbName: adoptName }" :wrapper-col="{ span: 18 }">
+        <Form.Item
+          label="库名"
+          name="dbName"
+          :rules="[
+            { required: true, message: '请输入库名' },
+            { pattern: /^[a-zA-Z0-9_]+$/, message: '仅支持字母、数字、下划线' },
+          ]"
+        >
+          <Input v-model:value="adoptName" placeholder="MySQL 中已存在的库名" />
+        </Form.Item>
+        <Form.Item label="备注" name="remark">
+          <Input v-model:value="adoptRemark" />
+        </Form.Item>
+      </Form>
     </Modal>
 
     <!-- 取号数据源：新增 / 编辑 -->

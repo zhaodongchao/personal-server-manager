@@ -38,6 +38,20 @@ export namespace AppstackApi {
     charset: string;
   }
 
+  /** MySQL 真实库概览（含面板纳管标记） */
+  export interface DatabaseOverview {
+    /** 纳管记录的 ID（雪花 19 位，序列化为字符串；未纳管为 null） */
+    id?: string;
+    dbName: string;
+    /** 默认字符集（取自 information_schema；悬空登记可能为空） */
+    charset?: string;
+    /** 是否已被面板纳管 */
+    managed: boolean;
+    /** 纳管库的授权账号（未纳管为空） */
+    dbUser?: string;
+    remark?: string;
+  }
+
   /**
    * 取号数据源（ID 生成器「自增 / 序列」方案真连库取号的目标库）。
    *
@@ -127,6 +141,16 @@ export async function getDatabasePageApi(params: {
 
 export async function getDatabaseCharsetsApi() {
   return requestClient.get<string[]>('/appstack/database/charsets');
+}
+
+/** 浏览 MySQL 全部真实库（含纳管标记），未纳管的已有库可经纳管登记进面板 */
+export async function getDatabaseOverviewApi() {
+  return requestClient.get<AppstackApi.DatabaseOverview[]>('/appstack/database/overview');
+}
+
+/** 纳管一个 MySQL 中已存在的库（登记进面板统一管理） */
+export async function adoptDatabaseApi(body: { dbName: string; remark?: string }) {
+  return requestClient.post('/appstack/database/adopt', body);
 }
 
 export async function createDatabaseApi(body: {
