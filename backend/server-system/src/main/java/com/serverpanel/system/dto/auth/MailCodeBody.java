@@ -18,9 +18,9 @@ public class MailCodeBody {
     @Email(message = "邮箱格式不正确")
     private String email;
 
-    /** 场景：login=登录（要求邮箱已绑定面板账号）；register=注册（要求邮箱未被占用） */
+    /** 场景：login=登录、reset=重置密码（要求邮箱已绑定面板账号）；register=注册（要求邮箱未被占用） */
     @NotBlank(message = "场景不能为空")
-    @Pattern(regexp = "login|register", message = "场景仅允许 login / register")
+    @Pattern(regexp = "login|reset|register", message = "场景仅允许 login / reset / register")
     private String purpose;
 
     /**

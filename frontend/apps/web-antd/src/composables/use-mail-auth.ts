@@ -68,7 +68,7 @@ export function useMailAuth() {
    */
   async function sendMailCode(
     email: string,
-    purpose: 'login' | 'register',
+    purpose: 'login' | 'reset' | 'register',
     captcha?: string,
   ) {
     await sendMailCodeApi({ email, purpose, captcha: captcha ?? '' });

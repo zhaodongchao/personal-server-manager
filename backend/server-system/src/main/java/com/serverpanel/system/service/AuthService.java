@@ -12,6 +12,7 @@ import com.serverpanel.system.dto.auth.MailCodeBody;
 import com.serverpanel.system.dto.auth.MailLoginBody;
 import com.serverpanel.system.dto.auth.PasswordBody;
 import com.serverpanel.system.dto.auth.RegisterBody;
+import com.serverpanel.system.dto.auth.ResetPasswordBody;
 import com.serverpanel.system.dto.auth.UserInfoVO;
 import com.serverpanel.system.dto.auth.UserProfileBody;
 import com.serverpanel.system.entity.SysUser;
@@ -133,7 +134,7 @@ public class AuthService {
      * 发送邮箱验证码（发码前安全闸门，顺序不可调换）：
      * ① 消费一次性发信令牌（由人机校验签发，缺失/失效 → 1037/1038）；
      * ② 来源 IP 限流与封锁（SendGuardService，超额 → 1039）；
-     * ③ 场景前置校验（login 要求邮箱已绑定账号、register 要求注册开关开启且邮箱未占用）。
+     * ③ 场景前置校验（login / reset 要求邮箱已绑定账号、register 要求注册开关开启且邮箱未占用）。
      */
     public void sendMailCode(MailCodeBody body, HttpServletRequest request) {
         captchaService.consumeSendToken(body.getCaptcha());
@@ -142,7 +143,9 @@ public class AuthService {
         String email = body.getEmail();
         boolean exists = userMapper.selectCount(new LambdaQueryWrapper<SysUser>()
                 .eq(SysUser::getEmail, email)) > 0;
-        if ("login".equals(body.getPurpose())) {
+        if ("login".equals(body.getPurpose()) || "reset".equals(body.getPurpose())) {
+            // login（登录）与 reset（重置密码）都要求邮箱已绑定面板账号；
+            // 已绑定的邮箱才会收到码，避免向其泄露"该邮箱是否注册过"。
             if (!exists) {
                 throw new ServiceException(ErrorCode.AUTH_USER_NOT_FOUND, "该邮箱未绑定面板账号");
             }
@@ -375,6 +378,38 @@ public class AuthService {
         userMapper.updateById(user);
         // 改密后全端下线
         StpUtil.logout(userId);
+    }
+
+    /**
+     * 忘记密码重置（免登录，邮箱验证码方式）：
+     * 校验验证码（purpose=reset，一次性消费）→ 按邮箱定位用户 → BCrypt 更新密码 → 全端下线。
+     *
+     * <p>安全要点：验证码自带「5 次失败作废 + 60s 冷却 + 日限 10」约束，重置接口因此
+     * 天然抗枚举/爆破；邮箱缺失（发码后被删除）按用户不存在处理（1005）。重置成功后
+     * 强制该账号所有会话下线，防止旧 token / 旧密码未失效前被继续使用。
+     */
+    public void resetPassword(ResetPasswordBody body, HttpServletRequest request) {
+        String email = body.getEmail();
+        // 一次性消费重置验证码——失败（错误/过期/超次数作废）统一返回 1033
+        mailCodeService.verify(email, "reset", body.getCode());
+
+        SysUser user = userMapper.selectOne(
+            new LambdaQueryWrapper<SysUser>().eq(SysUser::getEmail, email));
+        String ip = clientIp(request);
+        if (user == null) {
+            recordLoginLog("reset:" + email, ip, 0, "密码重置失败：邮箱未绑定面板账号", request);
+            throw new ServiceException(ErrorCode.AUTH_USER_NOT_FOUND, "该邮箱未绑定面板账号");
+        }
+        if (user.getStatus() == null || user.getStatus() != 1) {
+            recordLoginLog(user.getUsername(), ip, 0, "密码重置失败：账号已停用", request);
+            throw new ServiceException(ErrorCode.AUTH_USER_DISABLED);
+        }
+
+        user.setPassword(passwordEncoder.encode(body.getPassword()));
+        userMapper.updateById(user);
+        // 重置后强制该账号全端下线
+        StpUtil.logout(user.getId());
+        recordLoginLog(user.getUsername(), ip, 1, "密码重置成功（邮箱验证码）", request);
     }
 
     /**

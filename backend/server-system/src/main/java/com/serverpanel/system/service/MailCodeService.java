@@ -112,11 +112,15 @@ public class MailCodeService {
     }
 
     private String subjectOf(String purpose) {
-        return "login".equals(purpose) ? "ServerPanel 登录验证码" : "ServerPanel 注册验证码";
+        return switch (purpose) {
+            case "login" -> "ServerPanel 登录验证码";
+            case "reset" -> "ServerPanel 密码重置验证码";
+            default -> "ServerPanel 注册验证码";
+        };
     }
 
     private String textOf(String code, String purpose) {
-        String action = "login".equals(purpose) ? "登录" : "注册";
+        String action = "login".equals(purpose) ? "登录" : "重置密码";
         long minutes = Math.max(Math.max(codeTtlSeconds, 60) / 60, 1);
         return ("您正在使用邮箱验证码%s ServerPanel，验证码：%s%n%n"
                 + "验证码 %d 分钟内有效，且仅可使用一次。%n"
