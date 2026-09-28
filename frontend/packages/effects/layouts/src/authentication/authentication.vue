@@ -109,6 +109,8 @@ const logoSrc = computed(() => {
         class="absolute inset-0 size-full bg-background-deep dark:bg-[#070709]"
       >
         <div class="login-background absolute top-0 left-0 size-full"></div>
+        <div class="login-blob login-blob-1"></div>
+        <div class="login-blob login-blob-2"></div>
         <div
           :key="authPanelLeft ? 'left' : authPanelRight ? 'right' : 'center'"
           class="mr-20 flex-col-center h-full"
@@ -125,10 +127,12 @@ const logoSrc = computed(() => {
             />
           </template>
           <SloganIcon v-else :alt="appName" class="h-64 w-2/5 animate-float" />
-          <div class="text-1xl mt-6 font-sans text-foreground lg:text-2xl">
+          <div
+            class="mt-6 px-4 text-center font-sans text-xl font-semibold tracking-wide text-foreground lg:text-2xl"
+          >
             {{ pageTitle }}
           </div>
-          <div class="mt-2 dark:text-muted-foreground">
+          <div class="mt-2 max-w-md px-6 text-center dark:text-muted-foreground">
             {{ pageDescription }}
           </div>
         </div>
@@ -191,6 +195,53 @@ const logoSrc = computed(() => {
       #07070915 64%
     );
     filter: blur(100px);
+  }
+}
+
+/* 左侧品牌面板的柔光色斑，叠加在 login-background 之上增强层次。 */
+.login-blob {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(120px);
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.login-blob-1 {
+  top: 12%;
+  right: -10%;
+  width: 420px;
+  height: 420px;
+  background: hsl(var(--primary) / 26%);
+  animation: login-blob-drift 16s ease-in-out infinite;
+}
+
+.login-blob-2 {
+  bottom: 6%;
+  left: -12%;
+  width: 360px;
+  height: 360px;
+  background: hsl(var(--primary) / 18%);
+  animation: login-blob-drift 22s ease-in-out infinite reverse;
+}
+
+.dark {
+  .login-blob-1 {
+    background: hsl(var(--primary) / 16%);
+  }
+
+  .login-blob-2 {
+    background: hsl(var(--primary) / 12%);
+  }
+}
+
+@keyframes login-blob-drift {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(24px, -18px) scale(1.08);
   }
 }
 </style>
