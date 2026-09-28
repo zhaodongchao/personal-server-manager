@@ -1,8 +1,10 @@
 package com.serverpanel.appstack.controller;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import com.serverpanel.appstack.dto.AdoptBody;
 import com.serverpanel.appstack.dto.DatabaseBody;
 import com.serverpanel.appstack.dto.DatabaseCreateResult;
+import com.serverpanel.appstack.dto.DatabaseOverviewVO;
 import com.serverpanel.appstack.dto.RestoreBody;
 import com.serverpanel.appstack.entity.AppDatabase;
 import com.serverpanel.appstack.service.DatabaseService;
@@ -44,6 +46,22 @@ public class DatabaseController {
     @GetMapping("/charsets")
     public R<List<String>> charsets() {
         return R.ok(databaseService.charsets());
+    }
+
+    /** 浏览 MySQL 全部真实库（含纳管标记），纳管入口的数据源 */
+    @SaCheckPermission("appstack:database:list")
+    @GetMapping("/overview")
+    public R<List<DatabaseOverviewVO>> overview() {
+        return R.ok(databaseService.overview());
+    }
+
+    /** 纳管一个 MySQL 中已存在的库（登记进面板统一管理） */
+    @Audit(module = "appstack", action = "database:adopt", risky = true)
+    @SaCheckPermission("appstack:database:add")
+    @PostMapping("/adopt")
+    public R<Void> adopt(@Valid @RequestBody AdoptBody body) {
+        databaseService.adopt(body);
+        return R.ok();
     }
 
     @Audit(module = "appstack", action = "database:add", risky = true)
