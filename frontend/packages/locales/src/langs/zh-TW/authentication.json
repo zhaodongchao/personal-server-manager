@@ -48,7 +48,7 @@
   "mobile": "手機號碼",
   "mobileTip": "請輸入手機號",
   "mobileErrortip": "手機號碼格式錯誤",
-  "mobileLogin": "手機號登入",
+  "mobileLogin": "驗證碼登入",
   "sendCode": "獲取驗證碼",
   "sendText": "{0}秒後重新獲取",
   "thirdPartyLogin": "其他登入方式",
